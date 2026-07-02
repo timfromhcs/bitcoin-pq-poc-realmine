@@ -1,6 +1,6 @@
 [package]
 name = "qp_zip_miner"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2021"
 
 [dependencies]
@@ -8,10 +8,15 @@ rust_qp_zip = { path = "../rust_qp_zip" }
 sha2 = "0.10.8"
 rand = "0.8.5"
 lazy_static = "1.4.0"
-opencl3 = { version = "0.12.3", features = ["dynamic"] }
 num_cpus = "1.16.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_derive = "1.0"
+toml = "0.7"
 ureq = { version = "2.9", features = ["json"] }
 base64 = "0.21"
 hex = "0.4"
+ratatui = { version = "0.24", features = ["all-widgets"] }
+crossterm = "0.27"
+ash = "0.37"
+raw-window-handle = "0.5"

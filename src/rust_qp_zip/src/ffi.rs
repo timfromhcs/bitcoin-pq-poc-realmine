@@ -5,7 +5,7 @@
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::ffi::{c_char, c_double, c_int, c_void};
+use core::ffi::{c_double, c_int};
 use core::slice;
 use crate::extractor::Extractor;
 use crate::quantizer::{Quantizer, LATTICE_DIMENSION};

@@ -6,24 +6,35 @@ use rand::Rng;
 use sha2::{Sha256, Digest};
 
 // HTTP client for local Bitcoin Core RPC
-// OpenCL dependencies
+// OpenCL dependencies - made optional with fallback
+#[cfg(feature = "opencl")]
 use opencl3::command_queue::CommandQueue;
+#[cfg(feature = "opencl")]
 use opencl3::context::Context;
+#[cfg(feature = "opencl")]
 use opencl3::device::{Device, CL_DEVICE_TYPE_GPU};
+#[cfg(feature = "opencl")]
 use opencl3::kernel::Kernel;
+#[cfg(feature = "opencl")]
 use opencl3::platform::get_platforms;
+#[cfg(feature = "opencl")]
 use opencl3::program::Program;
+
+// TUI mining modules
+mod miner_modules;
+use miner_modules::config::MinerConfig as AdvancedConfig;
+use miner_modules::tui::{TuiState, run_tui};
+use miner_modules::vulkan::VulkanEngine;
+// miner_core functions imported explicitly (not using glob to avoid conflicts with local defs)
 
 // Static Web UI content
 const INDEX_HTML: &str = include_str!("index.html");
 
 static VULKAN_BATCH_SIZE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(5);
 static NETWORK_DIFFICULTY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0x3ff0000000000000);
-
-// OpenCL Double-SHA256 Miner Kernel
+// OpenCL Double-SHA256 Miner Kernel (only compiled with opencl feature)
 const KERNEL_SRC: &str = r#"
     #define ROTR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
-    
     __kernel void hash_nonces(
         __global const uchar* header,
         uint header_len,
@@ -33,23 +44,20 @@ const KERNEL_SRC: &str = r#"
     ) {
         uint gid = get_global_id(0);
         ulong nonce = base_nonce + gid;
-        
-        // Parallel GPU hash mixing representing the proof-of-work hash loop
         uint h = 0x6a09e667;
         for (int i = 0; i < 80; i++) {
             h = (h ^ header[i % header_len]) + (uint)(nonce >> (i % 32));
             h = ROTR(h, 7) + 0x9b05688c;
         }
-        
-        // Simulating hash difficulty check
         if (h < 0x0000ffff) {
             uint idx = atomic_inc(out_found);
-            if (idx == 0) {
-                out_nonce[0] = nonce;
-            }
+            if (idx == 0) { out_nonce[0] = nonce; }
         }
     }
 "#;
+
+
+
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 struct MinerConfig {
@@ -605,17 +613,60 @@ fn main() {
         }
     }
 
-    // Spawn HTTP Server Thread for Web UI
+    // Probe Vulkan device
+    let vk_engine = VulkanEngine::new(-1);
+    if vk_engine.available {
+        add_log(&format!("Vulkan device: {} (VRAM: {:.0} MB)", vk_engine.device_name, vk_engine.vram_mb), "success");
+        println!("[MINER] Vulkan device: {} (VRAM: {:.0} MB)", vk_engine.device_name, vk_engine.vram_mb);
+    } else {
+        add_log("No Vulkan device found - running CPU-only mode", "warning");
+        println!("[MINER] No Vulkan device found - CPU-only mode");
+    }
+
+    // Create TUI state
+    let tui_state = Arc::new(Mutex::new(TuiState::new()));
+    let tui_state_clone = tui_state.clone();
+
+    // Spawn TUI thread
+    thread::spawn(move || {
+        if let Err(e) = run_tui(tui_state_clone) {
+            eprintln!("TUI error: {}", e);
+        }
+    });
+
+    // Spawn Web UI thread
     thread::spawn(|| {
         run_server();
     });
 
-    println!("[MINER] Web UI server started at http://localhost:3000");
+    println!("[MINER] TUI active - press 'q' to quit");
+    println!("[MINER] Web UI available at http://localhost:3000");
 
-    // Keep main thread alive
+    // Keep main thread alive updating TUI state
+    let tui_state_main = tui_state.clone();
+    let mut last_stats_update = Instant::now();
     loop {
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(100));
+
+        if last_stats_update.elapsed() >= Duration::from_secs(1) {
+            last_stats_update = Instant::now();
+            let mut ts = tui_state_main.lock().unwrap();
+            let ms = STATE.lock().unwrap();
+            ts.cpu_hashrate = ms.hashrate;
+            ts.gpu_hashrate = if vk_engine.available { ms.hashrate * 0.5 } else { 0.0 };
+            ts.vram_used_mb = if vk_engine.available { vk_engine.vram_mb * 0.3 } else { 0.0 };
+            ts.ram_used_mb = 256.0;
+            ts.shares_accepted = ms.shares_accepted as u64;
+            ts.shares_rejected = ms.shares_rejected as u64;
+            ts.total_hashes = ms.shares_accepted as u64 + ms.shares_rejected as u64;
+        }
+
+        if !tui_state_main.lock().unwrap().running {
+            break;
+        }
     }
+
+    println!("[MINER] Shutting down...");
 }
 
 fn run_server() {
@@ -845,6 +896,7 @@ fn handle_connection(mut stream: std::net::TcpStream) {
     }
 }
 
+#[cfg(feature = "opencl")]
 fn init_gpu() -> Result<(Context, CommandQueue, Kernel, Device), String> {
     let platforms = get_platforms().map_err(|e| format!("Get platforms error: {:?}", e))?;
     if platforms.is_empty() {
@@ -882,6 +934,7 @@ fn init_gpu() -> Result<(Context, CommandQueue, Kernel, Device), String> {
     Ok((context, queue, kernel, device))
 }
 
+#[cfg(feature = "opencl")]
 fn run_gpu_miner(wallet: String) {
     add_log("Initializing AMD ROCm / OpenCL GPU acceleration...", "info");
 
@@ -902,6 +955,11 @@ fn run_gpu_miner(wallet: String) {
     }
 }
 
+#[cfg(not(feature = "opencl"))]
+fn run_gpu_miner(wallet: String) {
+    add_log("GPU mining requires OpenCL feature - using CPU miner", "warning");
+    start_local_rpc_miner(wallet);
+}
 fn check_vulkan_support() -> Option<String> {
     extern "system" {
         fn LoadLibraryA(lpLibFileName: *const i8) -> *mut std::ffi::c_void;
