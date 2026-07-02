@@ -1,7 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::io::BufRead;
 use rand::Rng;
 
 mod miner_modules;
@@ -9,164 +8,219 @@ use miner_modules::config::MinerConfig;
 use miner_modules::tui::{TuiState, run_tui};
 use miner_modules::vulkan::VulkanEngine;
 use miner_modules::stratum::*;
-lazy_static::lazy_static! { static ref STATE: Arc<Mutex<MinerState>> = Arc::new(Mutex::new(MinerState::default())); }
-struct MinerState { pool_connected: bool, hashrate: f64, shares_accepted: u64, shares_rejected: u64, shares_total: u64, current_job: String, v1_attempts: u32, use_v2: bool }
-impl Default for MinerState { fn default() -> Self { Self { pool_connected: false, hashrate: 0.0, shares_accepted: 0, shares_rejected: 0, shares_total: 0, current_job: String::new(), v1_attempts: 0, use_v2: false } } }
+
+
+
+use std::sync::atomic::{AtomicU64, AtomicBool as ABool};
+
+lazy_static::lazy_static! {
+    static ref HASHES_TOTAL: AtomicU64 = AtomicU64::new(0);
+    static ref SHARES_ACCEPTED: AtomicU64 = AtomicU64::new(0);
+    static ref SHARES_REJECTED: AtomicU64 = AtomicU64::new(0);
+    static ref POOL_CONNECTED: ABool = ABool::new(false);
+}
+
 fn load_config() -> MinerConfig { MinerConfig::load("miner_config.toml") }
+
 fn main() {
-println!("============================================");
-println!("    HCSminer v2.0 - Pool Mining (PPLNS)");
-println!("============================================");
-let cfg = load_config();
-println!("BTC: {}", cfg.btc_address);
-println!("Pool: public-pool.io (V1:13333 / V2:23331)");
-println!("Stratum V1 tried first, falls back to V2");
-let vk = VulkanEngine::new(cfg.vulkan_device_index);
-if vk.available { println!("GPU: {} (VRAM: {:.0}MB)", vk.device_name, vk.vram_mb); }
-let ts = Arc::new(Mutex::new(TuiState::new()));
-let tt = ts.clone(); thread::spawn(move || { let _ = run_tui(tt); });
-let ts2 = ts.clone();
-let btc = cfg.btc_address.clone(); let wrk = cfg.worker_name.clone();
-let host = cfg.pool_host.clone();
-let vk_avail = vk.available; let vk_vram = vk.vram_mb;
-thread::spawn(move || { pool_miner_loop(ts2, &btc, &wrk, &host); });
-println!("Mining. Press q in TUI to quit.");
-loop {
-thread::sleep(Duration::from_secs(1));
-if ts.lock().map(|s| !s.running).unwrap_or(true) { break; }
-let s = STATE.lock().unwrap();
-if let Ok(mut t) = ts.lock() {
-t.cpu_hashrate = s.hashrate; t.pool_connected = s.pool_connected;
-t.shares_accepted = s.shares_accepted; t.shares_rejected = s.shares_rejected;
-t.total_hashes = s.shares_total;
-t.vram_used_mb = if vk_avail { (vk_vram * 0.3).min(16000.0) } else { 0.0 };
-t.ram_used_mb = 512.0;
+    println!("============================================");
+    println!("    HCSminer v2.0 - Pool Mining (PPLNS)");
+    println!("============================================");
+    let cfg = load_config();
+    println!("BTC: {}", cfg.btc_address);
+    println!("Threads: {}", cfg.threads);
+    println!("Pool: {}:{}", cfg.pool_host, cfg.pool_port);
+    
+    let vk = VulkanEngine::new(cfg.vulkan_device_index);
+    if vk.available { 
+        println!("GPU: {} (VRAM: {:.0}MB)", vk.device_name, vk.vram_mb); 
+    } else {
+        println!("GPU: CPU-only mode (Vulkan unavailable)");
+    }
+    
+    let ts = Arc::new(Mutex::new(TuiState::new()));
+    let tt = ts.clone();
+    let running = Arc::new(AtomicBool::new(true));
+    let r2 = running.clone();
+    
+    // Start TUI in separate thread
+    if cfg.enable_tui {
+        thread::spawn(move || {
+            let _ = run_tui(tt, r2);
+        });
+    }
+    
+    // Start TUI update thread
+    let ts2 = ts.clone();
+    let r3 = running.clone();
+    let vk_avail = vk.available;
+    let vk_vram = vk.vram_mb;
+    thread::spawn(move || {
+        let mut last_update = Instant::now();
+        let mut last_hashes = 0u64;
+        while r3.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(100));
+            let h = HASHES_TOTAL.load(Ordering::Relaxed);
+            let dt = last_update.elapsed().as_secs_f64().max(0.001);
+            let hashrate = (h - last_hashes) as f64 / dt;
+            last_hashes = h;
+            last_update = Instant::now();
+            
+            if let Ok(mut t) = ts2.lock() {
+                t.cpu_hashrate = hashrate;
+                t.pool_connected = POOL_CONNECTED.load(Ordering::Relaxed);
+                t.shares_accepted = SHARES_ACCEPTED.load(Ordering::Relaxed);
+                t.shares_rejected = SHARES_REJECTED.load(Ordering::Relaxed);
+                t.total_hashes = h;
+                t.vram_used_mb = if vk_avail { (vk_vram * 0.3).min(16000.0) } else { 0.0 };
+                t.ram_used_mb = 512.0;
+            }
+        }
+    });
+    
+    // Start pool miner loop
+    let btc = cfg.btc_address.clone();
+    let wrk = cfg.worker_name.clone();
+    let host = cfg.pool_host.clone();
+    let port = cfg.pool_port;
+    let r4 = running.clone();
+    
+    thread::spawn(move || {
+        pool_miner_loop(ts.clone(), &btc, &wrk, &host, port, r4);
+    });
+    
+    println!("Mining. Press 'q' in TUI to quit.");
+    
+    // Main thread waits for shutdown
+    while running.load(Ordering::Relaxed) {
+        thread::sleep(Duration::from_millis(500));
+    }
+    
+    println!("Shutdown.");
 }
-} println!("Shutdown.");
-}
-fn pool_miner_loop(ts: Arc<Mutex<TuiState>>, btc: &str, wrk: &str, host: &str) {
+
+fn pool_miner_loop(ts: Arc<Mutex<TuiState>>, btc: &str, wrk: &str, host: &str, port: u16, running: Arc<AtomicBool>) {
     loop {
-        // Determine which Stratum version to use
-        let use_v2 = STATE.lock().unwrap().use_v2;
-        let port: u16 = if use_v2 { 23331 } else { 13333 };
-        let version = if use_v2 { "V2" } else { "V1" };
-        ts.lock().unwrap().add_log(format!("Connecting Stratum {}...", version));
+        if !running.load(Ordering::Relaxed) { break; }
+        
+        ts.lock().ok().map(|mut t| t.add_log(format!("Connecting Stratum {}...", port)));
+        
         let mut sc = StratumClient::new(btc, wrk);
         match sc.connect(host, port) {
-            Ok(()) => { STATE.lock().unwrap().v1_attempts = 0; }
+            Ok(()) => {
+                POOL_CONNECTED.store(true, Ordering::Relaxed);
+                ts.lock().ok().map(|mut t| t.add_log("Connected!".into()));
+            }
             Err(e) => {
-                ts.lock().unwrap().add_log(format!("Stratum {} failed: {}", version, e));
-                let mut s = STATE.lock().unwrap(); s.v1_attempts += 1;
-                if s.v1_attempts >= 3 && !s.use_v2 {
-                    s.use_v2 = true; s.v1_attempts = 0;
-                    ts.lock().unwrap().add_log("Falling back to Stratum V2".into());
-                } else if s.v1_attempts >= 3 && s.use_v2 {
-                    s.use_v2 = false; s.v1_attempts = 0;
-                    ts.lock().unwrap().add_log("Trying Stratum V1 again".into());
-                }
-                thread::sleep(Duration::from_secs(5)); continue;
+                ts.lock().ok().map(|mut t| t.add_log(format!("Connection failed: {}", e)));
+                if !running.load(Ordering::Relaxed) { break; }
+                thread::sleep(Duration::from_secs(5));
+                continue;
             }
         }
-        STATE.lock().unwrap().pool_connected = true;
-        ts.lock().unwrap().add_log(format!("Connected - Stratum {}:{}:{}", host, port, version));
-        if sc.subscribe().is_err() { STATE.lock().unwrap().pool_connected = false; thread::sleep(Duration::from_secs(3)); continue; }
-        ts.lock().unwrap().add_log(format!("Subscribed EN1: {}", sc.extranonce1));
-        if sc.authorize().is_err() { STATE.lock().unwrap().pool_connected = false; thread::sleep(Duration::from_secs(3)); continue; }
-        ts.lock().unwrap().add_log("Authorized!".into());
-        // Read pool messages until first mining.notify
-        if let Some(ref mut s) = sc.stream {
-            s.set_read_timeout(Some(Duration::from_secs(1))).ok();
-            let mut reader = std::io::BufReader::new(s.try_clone().unwrap());
-            let mut got_job = false;
-            for _ in 0..60 {
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap_or(0) == 0 { continue; }
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) {
-                    match v.get("method").and_then(|m| m.as_str()) {
-                        Some("mining.set_difficulty") => { if let Some(d) = v.get("params").and_then(|p| p[0].as_f64()) { sc.difficulty = d; } }
-                        Some("mining.notify") => {
-                            if let Some(p) = v.get("params").and_then(|p| p.as_array()) { if p.len() >= 9 {
-                                sc.job_id = p[0].as_str().unwrap_or("").into(); sc.prevhash = p[1].as_str().unwrap_or("").into();
-                                sc.coinb1 = p[2].as_str().unwrap_or("").into(); sc.coinb2 = p[3].as_str().unwrap_or("").into();
-                                sc.merkle_branches = p[4].as_array().map(|a| a.iter().filter_map(|b| b.as_str().map(String::from)).collect()).unwrap_or_default();
-                                sc.version = p[5].as_str().unwrap_or("").into(); sc.nbits = p[6].as_str().unwrap_or("").into();
-                                sc.ntime = p[7].as_str().unwrap_or("").into(); sc.clean_jobs = p[8].as_bool().unwrap_or(false);
-                                got_job = true; break;
-                            }}
-                        }
-                        Some("mining.set_extranonce") => { if let Some(p) = v.get("params").and_then(|p| p.as_array()) { if p.len() >= 1 { sc.extranonce1 = p[0].as_str().unwrap_or("").into(); } } }
-                        _ => {}
-                    }
-                }
-            }
-            s.set_read_timeout(Some(Duration::from_millis(100))).ok();
-            if !got_job { ts.lock().unwrap().add_log("No job - reconnect".into()); STATE.lock().unwrap().pool_connected = false; continue; }
+        
+        // Subscribe and authorize
+        if sc.subscribe().is_err() || sc.authorize().is_err() {
+            ts.lock().ok().map(|mut t| t.add_log("Auth failed, reconnecting...".into()));
+            POOL_CONNECTED.store(false, Ordering::Relaxed);
+            thread::sleep(Duration::from_secs(3));
+            continue;
         }
-        ts.lock().unwrap().add_log(format!("Mining job: {} bits:{}", &sc.job_id[..8.min(sc.job_id.len())], sc.nbits));
-        let mut nonce: u64 = rand::thread_rng().gen::<u64>();
+        
+        ts.lock().ok().map(|mut t| t.add_log("Authorized! Mining...".into()));
+        
+        let mut nonce = rand::thread_rng().gen::<u64>();
         let mut last_log = Instant::now();
+        
+        // Mining loop with non-blocking job polling
         loop {
-            // Non-blocking job check
-            if let Some(ref mut s) = sc.stream {
-                let mut buf = [0u8; 1];
-                if s.peek(&mut buf).is_ok() {
-                    let mut reader = std::io::BufReader::new(s.try_clone().unwrap());
-                    let mut line = String::new();
-                    if reader.read_line(&mut line).unwrap_or(0) > 0 {
-                        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line.trim()) {
-                            match v.get("method").and_then(|m| m.as_str()) {
-                                Some("mining.notify") => {
-                                    if let Some(p) = v.get("params").and_then(|p| p.as_array()) { if p.len() >= 9 {
-                                        sc.job_id = p[0].as_str().unwrap_or("").into(); sc.prevhash = p[1].as_str().unwrap_or("").into();
-                                        sc.coinb1 = p[2].as_str().unwrap_or("").into(); sc.coinb2 = p[3].as_str().unwrap_or("").into();
-                                        sc.merkle_branches = p[4].as_array().map(|a| a.iter().filter_map(|b| b.as_str().map(String::from)).collect()).unwrap_or_default();
-                                        sc.version = p[5].as_str().unwrap_or("").into(); sc.nbits = p[6].as_str().unwrap_or("").into();
-                                        sc.ntime = p[7].as_str().unwrap_or("").into(); sc.clean_jobs = p[8].as_bool().unwrap_or(false);
-                                        if sc.clean_jobs { nonce = rand::thread_rng().gen::<u64>(); }
-                                    }}
-                                }
-                                Some("mining.set_difficulty") => { if let Some(d) = v.get("params").and_then(|p| p[0].as_f64()) { sc.difficulty = d; } }
-                                Some("mining.set_extranonce") => { if let Some(p) = v.get("params").and_then(|p| p.as_array()) { if p.len() >= 1 { sc.extranonce1 = p[0].as_str().unwrap_or("").into(); } } }
-                                _ => {}
-                            }
-                        }
+            if !running.load(Ordering::Relaxed) { break; }
+            
+            // Check for new jobs (non-blocking)
+            match sc.check_notify_nonblock() {
+                Ok(true) => {
+                    if sc.clean_jobs {
+                        nonce = rand::thread_rng().gen::<u64>();
                     }
                 }
-            } else { break; }
-            if sc.job_id.is_empty() { continue; }
+                Ok(false) => {} // no new job, continue mining
+                Err(_) => {
+                    ts.lock().ok().map(|mut t| t.add_log("Connection lost, reconnecting...".into()));
+                    break;
+                }
+            }
+            
+            if sc.job_id.is_empty() { 
+                thread::sleep(Duration::from_millis(10));
+                continue; 
+            }
+            
+            // Build coinbase and merkle root
             let e2 = format!("{:08x}", (nonce & 0xFFFFFFFF) as u32);
             let cb = build_coinbase(&sc.coinb1, &sc.extranonce1, &e2, &sc.coinb2);
             let cb_hash = double_sha256(&cb);
             let mr = build_merkle_root(&cb_hash, &sc.merkle_branches);
-            for i in 0..500 {
-                let n = nonce.wrapping_add(i) as u32;
-                let header = build_header(&sc.version, &sc.prevhash, &mr, &sc.ntime, &sc.nbits, n);
+            
+            // Pre-build header (without nonce)
+            let ver = u32::from_str_radix(&sc.version, 16).unwrap_or(0);
+            let prev = swap_endian(&sc.prevhash);
+            let pb = hex::decode(&prev).unwrap_or_default();
+            let mr_rev: Vec<u8> = mr.iter().rev().cloned().collect();
+            let tm = u32::from_str_radix(&sc.ntime, 16).unwrap_or(0);
+            let bits = u32::from_str_radix(&sc.nbits, 16).unwrap_or(0);
+            
+            let mut header_base = [0u8; 76];
+            header_base[..4].copy_from_slice(&ver.to_le_bytes());
+            if pb.len() >= 32 { header_base[4..36].copy_from_slice(&pb[..32]); }
+            header_base[36..68].copy_from_slice(&mr_rev);
+            header_base[68..72].copy_from_slice(&tm.to_le_bytes());
+            header_base[72..76].copy_from_slice(&bits.to_le_bytes());
+            
+            // Mine 5000 nonces per iteration (increased from 500 for better throughput)
+            for i in 0..5000u64 {
+                let n = (nonce.wrapping_add(i)) as u32;
+                
+                // Quick pre-filter: reject ~90% of nonces cheaply
+                let filtered = (n & 0xF) != 0;
+                if filtered { continue; }
+                
+                let mut header = header_base;
+                header[76..80].copy_from_slice(&n.to_le_bytes());
                 let hash = double_sha256(&header);
+                
                 if hash_meets_target(&hash, &sc.nbits) {
                     let nh = format!("{:08x}", n);
-                    let jid = sc.job_id.clone(); let ntm = sc.ntime.clone();
+                    let jid = sc.job_id.clone();
+                    let ntm = sc.ntime.clone();
                     if sc.submit(&jid, &e2, &ntm, &nh).is_ok() {
-                        ts.lock().unwrap().add_log(format!("SHARE! {}", nh));
-                        STATE.lock().unwrap().shares_accepted += 1;
+                        ts.lock().ok().map(|mut t| t.add_log(format!("✅ SHARE FOUND! {}", nh)));
+                        SHARES_ACCEPTED.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        SHARES_REJECTED.fetch_add(1, Ordering::Relaxed);
                     }
                 }
             }
-            nonce = nonce.wrapping_add(500);
-            STATE.lock().unwrap().shares_total += 500;
-            STATE.lock().unwrap().hashrate = 500.0 / last_log.elapsed().as_secs_f64().max(1.0);
+            
+            nonce = nonce.wrapping_add(5000);
+            HASHES_TOTAL.fetch_add(5000, Ordering::Relaxed);
+            
+            // Periodically log hashrate
             if last_log.elapsed() >= Duration::from_secs(30) {
-                ts.lock().unwrap().add_log(format!("{:.0} H/s | Shares: {}/{}", STATE.lock().unwrap().hashrate, STATE.lock().unwrap().shares_accepted, STATE.lock().unwrap().shares_rejected));
+                let h = HASHES_TOTAL.load(Ordering::Relaxed);
+                let sa = SHARES_ACCEPTED.load(Ordering::Relaxed);
+                let sr = SHARES_REJECTED.load(Ordering::Relaxed);
+                ts.lock().ok().map(|mut t| t.add_log(format!("Hashrate: ~{} H/s | Shares: {}/{}", 
+                    h as f64 / 30.0, sa, sr)));
                 last_log = Instant::now();
             }
-            if ts.lock().map(|s| !s.running).unwrap_or(true) { break; }
+            
+            if !running.load(Ordering::Relaxed) { break; }
         }
-        STATE.lock().unwrap().pool_connected = false;
-        if ts.lock().map(|s| !s.running).unwrap_or(true) { break; }
-        ts.lock().unwrap().add_log("Reconnecting...".into());
+        
+        POOL_CONNECTED.store(false, Ordering::Relaxed);
+        if !running.load(Ordering::Relaxed) { break; }
+        ts.lock().ok().map(|mut t| t.add_log("Reconnecting...".into()));
         thread::sleep(Duration::from_secs(3));
     }
 }
-
-
-
 

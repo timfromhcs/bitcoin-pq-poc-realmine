@@ -42,6 +42,51 @@ impl StratumClient {
             }
         } else { Err("No stream".to_string()) }
     }
+
+    /// Wait for and parse a mining.notify message (non-blocking peek + read)
+    /// Returns Ok(true) if a new job was received, Ok(false) if no data available
+    pub fn wait_for_notify(&mut self) -> Result<bool, String> {
+        loop {
+            let line = self.recv()?;
+            if line.is_empty() { return Ok(false); }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                match v.get("method").and_then(|m| m.as_str()) {
+                    Some("mining.notify") => {
+                        if let Some(p) = v.get("params").and_then(|p| p.as_array()) {
+                            if p.len() >= 9 {
+                                self.job_id = p[0].as_str().unwrap_or("").into();
+                                self.prevhash = p[1].as_str().unwrap_or("").into();
+                                self.coinb1 = p[2].as_str().unwrap_or("").into();
+                                self.coinb2 = p[3].as_str().unwrap_or("").into();
+                                self.merkle_branches = p[4].as_array()
+                                    .map(|a| a.iter().filter_map(|b| b.as_str().map(String::from)).collect())
+                                    .unwrap_or_default();
+                                self.version = p[5].as_str().unwrap_or("").into();
+                                self.nbits = p[6].as_str().unwrap_or("").into();
+                                self.ntime = p[7].as_str().unwrap_or("").into();
+                                self.clean_jobs = p[8].as_bool().unwrap_or(false);
+                                return Ok(true);
+                            }
+                        }
+                    }
+                    Some("mining.set_difficulty") => {
+                        if let Some(d) = v.get("params").and_then(|p| p[0].as_f64()) {
+                            self.difficulty = d;
+                        }
+                    }
+                    Some("mining.set_extranonce") => {
+                        if let Some(p) = v.get("params").and_then(|p| p.as_array()) {
+                            if p.len() >= 1 {
+                                self.extranonce1 = p[0].as_str().unwrap_or("").into();
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     pub fn new(btc: &str, wrk: &str) -> Self {
         StratumClient {
             stream: None, connected: false, extranonce1: String::new(), extranonce2_size: 0,
@@ -80,38 +125,7 @@ impl StratumClient {
         let v: serde_json::Value = serde_json::from_str(&r).map_err(|e| format!("JP: {}", e))?;
         if v.get("result").and_then(|r| r.as_bool()).unwrap_or(false) { return Ok(()); }
         Err("Auth rejected".to_string())
-    }
-    pub fn wait_for_notify(&mut self) -> Result<bool, String> {
-        loop {
-            let line = self.recv()?;
-            if line.is_empty() { continue; }
-            let v: serde_json::Value = match serde_json::from_str(&line) { Ok(v) => v, Err(_) => continue };
-            match v.get("method").and_then(|m| m.as_str()) {
-                Some("mining.notify") => {
-                    if let Some(p) = v.get("params").and_then(|p| p.as_array()) {
-                        if p.len() >= 9 {
-                            self.job_id = p[0].as_str().unwrap_or("").to_string();
-                            self.prevhash = p[1].as_str().unwrap_or("").to_string();
-                            self.coinb1 = p[2].as_str().unwrap_or("").to_string();
-                            self.coinb2 = p[3].as_str().unwrap_or("").to_string();
-                            self.merkle_branches = p[4].as_array().map(|a| a.iter().filter_map(|b| b.as_str().map(String::from)).collect()).unwrap_or_default();
-                            self.version = p[5].as_str().unwrap_or("").to_string();
-                            self.nbits = p[6].as_str().unwrap_or("").to_string();
-                            self.ntime = p[7].as_str().unwrap_or("").to_string();
-                            self.clean_jobs = p[8].as_bool().unwrap_or(false);
-                            return Ok(true);
-                        }
-                    }
-                }
-                Some("mining.set_difficulty") => {
-                    if let Some(d) = v.get("params").and_then(|p| p[0].as_f64()) {
-                        self.difficulty = d;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
+    }
     pub fn submit(&mut self, job: &str, e2: &str, tm: &str, nonce: &str) -> Result<(), String> {
         let user = format!("{}.{}", self.btc_address, self.worker_name);
         let msg = serde_json::json!({"id":3,"method":"mining.submit","params":[user,job,e2,tm,nonce]});

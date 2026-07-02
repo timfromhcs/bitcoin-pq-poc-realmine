@@ -1,10 +1,12 @@
 @echo off
-title BIP-QP-ZIP GPU Miner
+title HCSminer v2.0 - Post-Quantum Pool Miner
 echo ====================================================
-echo    BIP-QP-ZIP GPU-ACCELERATED AMD ROCm MINER RUNTIME
+echo    HCSminer v2.0 - Pool Mining (PPLNS)
+echo    public-pool.io
 echo ====================================================
 echo.
 echo [INFO] Compiling miner binary for Windows x64...
+echo [INFO] Using profile: release (optimized for speed)
 cargo build --release --manifest-path src/qp_zip_miner/Cargo.toml
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Cargo compilation failed. Please verify Rust installation.
@@ -12,9 +14,11 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b %ERRORLEVEL%
 )
 
-echo [INFO] Starting Web UI and launching miner backend...
-echo [INFO] Opening Web UI in your default browser...
-start http://localhost:3000
-
-src\qp_zip_miner\target\release\qp_zip_miner.exe
-pause
+echo [INFO] Starting HCSminer...
+echo [INFO] Press 'q' in the TUI to quit.
+echo.
+src\qp_zip_miner\target\release\hcsminer.exe
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Miner exited with error code %ERRORLEVEL%
+    pause
+)

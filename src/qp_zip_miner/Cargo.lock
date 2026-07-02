@@ -258,7 +258,6 @@ dependencies = [
  "raw-window-handle",
  "rust_qp_zip",
  "serde",
- "serde_derive",
  "serde_json",
  "sha2",
  "toml",
