@@ -1,22 +1,17 @@
-# BIP-QP-ZIP MTP Miner
+# HCSminer - Post-Quantum Bitcoin Miner
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange)](https://www.rust-lang.org/)
 [![Vulkan](https://img.shields.io/badge/Vulkan-1.3-red)](https://www.vulkan.org/)
 [![Bitcoin](https://img.shields.io/badge/Bitcoin_Core-28.0-blue)](https://bitcoincore.org/)
 
-**Post-Quantum Proof-of-Work Miner with Vulkan GPU Acceleration**
+**HCSminer** - Post-quantum Bitcoin miner with Vulkan GPU acceleration.
 
-Bitcoin mining with lattice-based post-quantum signature compression, Vulkan GPU offloading, and real-time TUI.
+> Made with ❤️ by [timfromhcs](https://github.com/timfromhcs) and [@hcmedia](https://github.com/hcmedia)
 
 ---
 
 ## Quick Start
-
-### Prerequisites
-- Bitcoin Core 28.0+ (fully synced)
-- Rust toolchain (for building)
-- Vulkan-capable GPU (optional, CPU fallback)
 
 ### One-Click Mining
 ```batch
@@ -39,45 +34,18 @@ start http://localhost:3000
 ```
 
 ## Configuration
-
-### miner_config.toml
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| wallet | bc1q... | Mining payout address |
-| quantization_depth | 1024.0 | Lattice precision |
-| probabilistic_threshold | 0.05 | Pre-filter sensitivity |
-| vulkan_device_index | -1 | GPU (-1 = auto) |
-| memory_offload_threshold_mb | 512 | VRAM offload boundary |
-| enable_tui | true | Toggle Terminal UI |
+See `miner_config.toml` for all settings.
 
 ## Architecture
-
-Mainnet -> Bitcoin Core (bitcoind) -> RPC -> QP-ZIP Miner -> CPU/Vulkan/TUI
-
-Components:
-- rust_qp_zip/ - Post-quantum crypto library (no_std)
-- qp_zip_miner/ - GPU miner with Vulkan engine, TUI, config
+Mainnet -> Bitcoin Core -> RPC -> HCSminer -> CPU/Vulkan/TUI
 
 ## User Interfaces
-- Terminal UI: Real-time hashrate, VRAM gauges, logs. Press 'q' to quit.
-- Web UI: http://localhost:3000 - Browser dashboard
+- **TUI**: Real-time hashrate, VRAM gauges. Press 'q' to quit.
+- **Web UI**: http://localhost:3000
 
 ## Releases
-| Version | Platform | Download |
-|---------|----------|----------|
-| v2.0.0 | Windows x64 | releases/v2.0.0/qp_zip_miner.exe |
-
-Build: cd src/qp_zip_miner && cargo build --release
-
-## Performance
-- CPU (16 threads, Ryzen 7000): ~50 KH/s
-- GPU + CPU: ~65 KH/s (with Vulkan)
-- Probabilistic filter: 16x nonce reduction
-
-## Developer Resources
-- AGENTS.md - AI coding assistant guidelines
-- docs/ - Architecture and setup documentation
-- developer_resources/ - Specs and benchmarks
+- **v2.0.0** (Win x64): `releases/v2.0.0/qp_zip_miner.exe`
+- Build: `cd src/qp_zip_miner && cargo build --release`
 
 ## License
-MIT
+MIT — Made with ❤️ by timfromhcs and @hcmedia

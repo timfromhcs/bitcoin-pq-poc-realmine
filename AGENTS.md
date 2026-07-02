@@ -1,9 +1,11 @@
 # AGENTS.md - AI Coding Assistant Guidelines
 
 ## Project Overview
-BIP-QP-ZIP is a post-quantum Bitcoin mining system:
+HCSminer - a post-quantum Bitcoin mining system:
 - rust_qp_zip (no_std Rust library): Lattice quantization, ZK proofs, extraction
 - qp_zip_miner (Rust binary): GPU miner with Vulkan, TUI, probabilistic pre-filtering
+
+Made with love by timfromhcs and @hcmedia.
 
 ## Key Principles
 1. No panics in library code - all operations fallible with error propagation

@@ -2,7 +2,7 @@
 name = "rust_qp_zip"
 version = "0.1.0"
 edition = "2021"
-authors = ["Bitcoin Core Developers"]
+authors = ["timfromhcs", "@hcmedia"]
 description = "Quantum-Proof Zero-Knowledge Inflight Processing for Bitcoin Core"
 license = "MIT"
 
