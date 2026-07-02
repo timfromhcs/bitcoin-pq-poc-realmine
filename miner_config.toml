@@ -1,11 +1,9 @@
-# HCSminer Pool Config
 btc_address = "bc1qzscjusprz5wwhxspgeyhlufqp3g8uxappsjm2w"
 worker_name = "hcsminer"
 pool_host = "public-pool.io"
-# pool_port no longer needed - hardcoded fallback V1:13333 / V2:23331
+pool_port = 13333
 use_tls = false
 threads = 16
 quantization_depth = 1024.0
 vulkan_device_index = -1
 enable_tui = true
-

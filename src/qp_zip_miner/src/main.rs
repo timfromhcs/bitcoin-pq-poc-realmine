@@ -39,7 +39,7 @@ if let Ok(mut t) = ts.lock() {
 t.cpu_hashrate = s.hashrate; t.pool_connected = s.pool_connected;
 t.shares_accepted = s.shares_accepted; t.shares_rejected = s.shares_rejected;
 t.total_hashes = s.shares_total;
-t.vram_used_mb = if vk_avail { vk_vram * 0.3 } else { 0.0 };
+t.vram_used_mb = if vk_avail { (vk_vram * 0.3).min(16000.0) } else { 0.0 };
 t.ram_used_mb = 512.0;
 }
 } println!("Shutdown.");
@@ -166,5 +166,7 @@ fn pool_miner_loop(ts: Arc<Mutex<TuiState>>, btc: &str, wrk: &str, host: &str) {
         thread::sleep(Duration::from_secs(3));
     }
 }
+
+
 
 
