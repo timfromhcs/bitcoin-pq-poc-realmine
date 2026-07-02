@@ -42,31 +42,21 @@ impl MiningBuffers {
     }
 }
 
-/// Process a batch of nonces on a single thread
-pub fn mine_batch(
-    header_base: &[u8; 76],
-    target: &[u8; 32],
-    start_nonce: u64,
-    batch_size: u64,
-    stats: &MinerStats,
-) -> Option<u32> {
-    let mut header = [0u8; 80];
-    header[..76].copy_from_slice(header_base);
-
-    for i in 0..batch_size {
-        let nonce = (start_nonce.wrapping_add(i)) as u32;
-        header[76..80].copy_from_slice(&nonce.to_le_bytes());
-
-        let hash = double_sha256(&header);
-
-        if hash_meets_target(&hash, target) {
-            stats.shares_found.fetch_add(1, Ordering::Relaxed);
-            return Some(nonce);
+/// Convert nbits hex string to a 32-byte big-endian target array
+pub fn nbits_to_target(nbits: &str) -> [u8; 32] {
+    let bits = u32::from_str_radix(nbits, 16).unwrap_or(0x1d00ffff);
+    let exp = (bits >> 24) as usize;
+    let mant = (bits & 0x007FFFFF) as u64;
+    let mut target = [0u8; 32];
+    if exp >= 3 {
+        let idx = 32 - (exp - 3).min(32);
+        if idx < 32 {
+            target[idx] = ((mant >> 16) & 0xFF) as u8;
+            if idx + 1 < 32 { target[idx + 1] = ((mant >> 8) & 0xFF) as u8; }
+            if idx + 2 < 32 { target[idx + 2] = (mant & 0xFF) as u8; }
         }
     }
-
-    stats.total_hashes.fetch_add(batch_size, Ordering::Relaxed);
-    None
+    target
 }
 
 fn double_sha256(data: &[u8]) -> [u8; 32] {
@@ -117,5 +107,32 @@ pub fn spawn_miner_threads(
     }
 
     handles
+}
+
+/// Process a batch of nonces on a single thread
+pub fn mine_batch(
+    header_base: &[u8; 76],
+    target: &[u8; 32],
+    start_nonce: u64,
+    batch_size: u64,
+    stats: &MinerStats,
+) -> Option<u32> {
+    let mut header = [0u8; 80];
+    header[..76].copy_from_slice(header_base);
+
+    for i in 0..batch_size {
+        let nonce = (start_nonce.wrapping_add(i)) as u32;
+        header[76..80].copy_from_slice(&nonce.to_le_bytes());
+
+        let hash = double_sha256(&header);
+
+        if hash_meets_target(&hash, target) {
+            stats.shares_found.fetch_add(1, Ordering::Relaxed);
+            return Some(nonce);
+        }
+    }
+
+    stats.total_hashes.fetch_add(batch_size, Ordering::Relaxed);
+    None
 }
 

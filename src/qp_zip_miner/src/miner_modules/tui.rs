@@ -1,4 +1,4 @@
-use crossterm::{event::{KeyCode},execute,terminal::{disable_raw_mode,enable_raw_mode,EnterAlternateScreen,LeaveAlternateScreen}};
+﻿use crossterm::{event::{KeyCode},execute,terminal::{disable_raw_mode,enable_raw_mode,EnterAlternateScreen,LeaveAlternateScreen}};
 use ratatui::{prelude::*,widgets::*};
 use std::sync::{Arc,Mutex,atomic::{AtomicBool, Ordering}};
 
@@ -11,7 +11,6 @@ pub struct TuiState{
     pub shares_rejected:u64,
     pub total_hashes:u64,
     pub pool_connected:bool,
-    pub running:bool,
     pub log_messages:Vec<String>
 }
 
@@ -20,7 +19,7 @@ impl TuiState{
         Self{
             cpu_hashrate:0.0,gpu_hashrate:0.0,vram_used_mb:0.0,ram_used_mb:0.0,
             shares_accepted:0,shares_rejected:0,total_hashes:0,
-            pool_connected:false,running:true,log_messages:Vec::new()
+            pool_connected:false,log_messages:Vec::new()
         }
     }
     pub fn add_log(&mut self,msg:String){
@@ -39,7 +38,6 @@ pub fn run_tui(state:Arc<Mutex<TuiState>>, running:Arc<AtomicBool>)->Result<(),B
         let s=match state.lock(){
             Ok(s)=>s,
             Err(_)=>{
-                // Poisoned mutex - break out gracefully
                 break;
             }
         };

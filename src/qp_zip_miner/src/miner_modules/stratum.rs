@@ -1,4 +1,4 @@
-use sha2::{Sha256, Digest};
+﻿use sha2::{Sha256, Digest};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
@@ -22,6 +22,35 @@ pub struct StratumClient {
 }
 
 impl StratumClient {
+    pub fn new(btc: &str, worker: &str) -> Self {
+        Self {
+            stream: None,
+            connected: false,
+            extranonce1: String::new(),
+            extranonce2_size: 2,
+            difficulty: 1.0,
+            job_id: String::new(),
+            prevhash: String::new(),
+            coinb1: String::new(),
+            coinb2: String::new(),
+            merkle_branches: Vec::new(),
+            version: String::new(),
+            nbits: String::new(),
+            ntime: String::new(),
+            clean_jobs: false,
+            btc_address: btc.to_string(),
+            worker_name: worker.to_string(),
+        }
+    }
+    pub fn connect(&mut self, host: &str, port: u16) -> Result<(), String> {
+        let addr = format!("{}:{}", host, port);
+        let stream = TcpStream::connect(&addr).map_err(|e| format!("TCP: {}", e))?;
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
+        self.stream = Some(stream);
+        self.connected = true;
+        Ok(())
+    }
+
     pub fn check_notify_nonblock(&mut self) -> Result<bool, String> {
         if let Some(ref mut s) = self.stream {
             let mut buf = [0u8; 1];
@@ -40,11 +69,10 @@ impl StratumClient {
                     Err(format!("NB: {}", e))
                 }
             }
-        } else { Err("No stream".to_string()) }
+        } else {
+            Err("No stream".to_string())
+        }
     }
-
-    /// Wait for and parse a mining.notify message (non-blocking peek + read)
-    /// Returns Ok(true) if a new job was received, Ok(false) if no data available
     pub fn wait_for_notify(&mut self) -> Result<bool, String> {
         loop {
             let line = self.recv()?;
@@ -75,9 +103,12 @@ impl StratumClient {
                         }
                     }
                     Some("mining.set_extranonce") => {
-                        if let Some(p) = v.get("params").and_then(|p| p.as_array()) {
-                            if p.len() >= 1 {
-                                self.extranonce1 = p[0].as_str().unwrap_or("").into();
+                        if let Some(p) = v.get("params") {
+                            if let Some(en) = p.get(1).and_then(|v| v.as_str()) {
+                                self.extranonce1 = en.to_string();
+                            }
+                            if let Some(sz) = p.get(2).and_then(|v| v.as_u64()) {
+                                self.extranonce2_size = sz as usize;
                             }
                         }
                     }
@@ -86,69 +117,93 @@ impl StratumClient {
             }
         }
     }
-
-    pub fn new(btc: &str, wrk: &str) -> Self {
-        StratumClient {
-            stream: None, connected: false, extranonce1: String::new(), extranonce2_size: 0,
-            difficulty: 1.0, job_id: String::new(), prevhash: String::new(), coinb1: String::new(),
-            coinb2: String::new(), merkle_branches: Vec::new(), version: String::new(),
-            nbits: String::new(), ntime: String::new(), clean_jobs: false,
-            btc_address: btc.to_string(), worker_name: wrk.to_string(),
-        }
-    }
-    pub fn connect(&mut self, host: &str, port: u16) -> Result<(), String> {
-        let stream = TcpStream::connect(format!("{}:{}", host, port))
-            .map_err(|e| format!("TCP: {}", e))?;
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
-        self.stream = Some(stream);
-        self.connected = true;
-        Ok(())
-    }
     pub fn subscribe(&mut self) -> Result<(), String> {
         let msg = serde_json::json!({"id":1,"method":"mining.subscribe","params":["HCSminer/2.0"]});
         self.send(&serde_json::to_string(&msg).map_err(|e| format!("JS: {}", e))?)?;
-        let r = self.recv()?;
-        let v: serde_json::Value = serde_json::from_str(&r).map_err(|e| format!("JP: {}", e))?;
-        if let Some(arr) = v.get("result").and_then(|r| r.as_array()) {
-            if arr.len() >= 3 {
-                self.extranonce1 = arr[1].as_str().unwrap_or("").to_string();
-                self.extranonce2_size = arr[2].as_i64().unwrap_or(4) as usize;
+        loop {
+            let line = self.recv()?;
+            if line.is_empty() { continue; }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                if v.get("id").and_then(|i| i.as_u64()) == Some(1) {
+                    if let Some(r) = v.get("result").and_then(|r| r.as_array()) {
+                        if r.len() >= 2 {
+                            if let Some(en) = r[1].as_str() {
+                                self.extranonce1 = en.to_string();
+                            }
+                            if let Some(sz) = r.get(2).and_then(|v| v.as_u64()) {
+                                self.extranonce2_size = sz as usize;
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
             }
         }
-        Ok(())
     }
+
     pub fn authorize(&mut self) -> Result<(), String> {
         let user = format!("{}.{}", self.btc_address, self.worker_name);
         let msg = serde_json::json!({"id":2,"method":"mining.authorize","params":[user,"x"]});
         self.send(&serde_json::to_string(&msg).map_err(|e| format!("JS: {}", e))?)?;
-        let r = self.recv()?;
-        let v: serde_json::Value = serde_json::from_str(&r).map_err(|e| format!("JP: {}", e))?;
-        if v.get("result").and_then(|r| r.as_bool()).unwrap_or(false) { return Ok(()); }
-        Err("Auth rejected".to_string())
-    }
-    pub fn submit(&mut self, job: &str, e2: &str, tm: &str, nonce: &str) -> Result<(), String> {
-        let user = format!("{}.{}", self.btc_address, self.worker_name);
-        let msg = serde_json::json!({"id":3,"method":"mining.submit","params":[user,job,e2,tm,nonce]});
-        self.send(&serde_json::to_string(&msg).map_err(|e| format!("JS: {}", e))?)
+        loop {
+            let line = self.recv()?;
+            if line.is_empty() { continue; }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                if v.get("id").and_then(|i| i.as_u64()) == Some(2) {
+                    match v.get("result") {
+                        Some(val) if val.as_bool().unwrap_or(false) => return Ok(()),
+                        _ => return Err("Auth rejected".to_string()),
+                    }
+                }
+            }
+        }
     }
+    pub fn submit(&mut self, job_id: &str, extranonce2: &str, ntime: &str, nonce: &str) -> Result<(), String> {
+        let user = format!("{}.{}", self.btc_address, self.worker_name);
+        let msg = serde_json::json!({"id":3,"method":"mining.submit","params":[user,job_id,extranonce2,ntime,nonce]});
+        self.send(&serde_json::to_string(&msg).map_err(|e| format!("JS: {}", e))?)?;
+        loop {
+            let line = self.recv()?;
+            if line.is_empty() { continue; }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                if v.get("id").and_then(|i| i.as_u64()) == Some(3) {
+                    match v.get("result") {
+                        Some(val) if val.as_bool().unwrap_or(false) => return Ok(()),
+                        Some(_) => return Err("Share rejected".to_string()),
+                        None => {
+                            if let Some(e) = v.get("error").and_then(|e| e.as_str()) {
+                                return Err(format!("Share error: {}", e));
+                            }
+                            return Err("Unknown submit response".to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn send(&mut self, data: &str) -> Result<(), String> {
         if let Some(ref mut s) = self.stream {
-            s.write_all(format!("{}
-", data).as_bytes()).map_err(|e| format!("W: {}", e))
-        } else { Err("Not connected".to_string()) }
+            let msg = format!("{}\n", data);
+            s.write_all(msg.as_bytes()).map_err(|e| format!("W: {}", e))
+        } else {
+            Err("Not connected".to_string())
+        }
     }
+
     fn recv(&mut self) -> Result<String, String> {
         if let Some(ref mut s) = self.stream {
             let mut r = BufReader::new(s.try_clone().map_err(|e| format!("C: {}", e))?);
             let mut l = String::new();
             r.read_line(&mut l).map_err(|e| format!("R: {}", e))?;
             Ok(l.trim().to_string())
-        } else { Err("Not connected".to_string()) }
+        } else {
+            Err("Not connected".to_string())
+        }
     }
 }
-
-pub fn swap_endian(hex: &str) -> String {
-    hex::decode(hex).unwrap_or_default().iter().rev().map(|b| format!("{:02x}", b)).collect()
+pub fn swap_endian(hex_str: &str) -> String {
+    hex::decode(hex_str).unwrap_or_default().iter().rev().map(|b| format!("{:02x}", b)).collect()
 }
 
 pub fn double_sha256(data: &[u8]) -> [u8; 32] {
@@ -170,7 +225,6 @@ pub fn build_merkle_root(ch: &[u8; 32], branches: &[String]) -> [u8; 32] {
         let bb = hex::decode(b).unwrap_or_default();
         if bb.len() != 32 { continue; }
         let mut combined = [0u8; 64];
-        // Always put root first (little-endian for stratum) - actual order depends on hash comparison but this works for most pools
         combined[..32].copy_from_slice(&root);
         combined[32..].copy_from_slice(&bb);
         root = double_sha256(&combined);
@@ -195,7 +249,7 @@ pub fn build_header(version: &str, prevhash: &str, mr: &[u8; 32], ntime: &str, n
     h
 }
 
-pub fn hash_meets_target(hash: &[u8; 32], nbits: &str) -> bool {
+pub fn nbits_to_target(nbits: &str) -> [u8; 32] {
     let bits = u32::from_str_radix(nbits, 16).unwrap_or(0x1d00ffff);
     let exp = (bits >> 24) as usize;
     let mant = (bits & 0x007FFFFF) as u64;
@@ -208,6 +262,11 @@ pub fn hash_meets_target(hash: &[u8; 32], nbits: &str) -> bool {
             if idx + 2 < 32 { target[idx + 2] = (mant & 0xFF) as u8; }
         }
     }
+    target
+}
+
+pub fn hash_meets_target(hash: &[u8; 32], nbits: &str) -> bool {
+    let target = nbits_to_target(nbits);
     for i in 0..32 {
         if hash[i] > target[i] { return false; }
         if hash[i] < target[i] { return true; }

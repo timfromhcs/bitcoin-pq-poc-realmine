@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use rand::Rng;
@@ -8,16 +9,13 @@ use miner_modules::config::MinerConfig;
 use miner_modules::tui::{TuiState, run_tui};
 use miner_modules::vulkan::VulkanEngine;
 use miner_modules::stratum::*;
-
-
-
-use std::sync::atomic::{AtomicU64, AtomicBool as ABool};
+use miner_modules::miner_core::{MinerStats, spawn_miner_threads, nbits_to_target};
 
 lazy_static::lazy_static! {
     static ref HASHES_TOTAL: AtomicU64 = AtomicU64::new(0);
     static ref SHARES_ACCEPTED: AtomicU64 = AtomicU64::new(0);
     static ref SHARES_REJECTED: AtomicU64 = AtomicU64::new(0);
-    static ref POOL_CONNECTED: ABool = ABool::new(false);
+    static ref POOL_CONNECTED: AtomicBool = AtomicBool::new(false);
 }
 
 fn load_config() -> MinerConfig { MinerConfig::load("miner_config.toml") }
@@ -86,7 +84,7 @@ fn main() {
     let r4 = running.clone();
     
     thread::spawn(move || {
-        pool_miner_loop(ts.clone(), &btc, &wrk, &host, port, r4);
+        pool_miner_loop(ts.clone(), &btc, &wrk, &host, port, cfg.threads, r4);
     });
     
     println!("Mining. Press 'q' in TUI to quit.");
@@ -99,7 +97,16 @@ fn main() {
     println!("Shutdown.");
 }
 
-fn pool_miner_loop(ts: Arc<Mutex<TuiState>>, btc: &str, wrk: &str, host: &str, port: u16, running: Arc<AtomicBool>) {
+fn pool_miner_loop(
+    ts: Arc<Mutex<TuiState>>,
+    btc: &str,
+    wrk: &str,
+    host: &str,
+    port: u16,
+    num_threads: usize,
+    running: Arc<AtomicBool>,
+) {
+    let num_threads = num_threads.max(1);
     loop {
         if !running.load(Ordering::Relaxed) { break; }
         
@@ -132,7 +139,7 @@ fn pool_miner_loop(ts: Arc<Mutex<TuiState>>, btc: &str, wrk: &str, host: &str, p
         let mut nonce = rand::thread_rng().gen::<u64>();
         let mut last_log = Instant::now();
         
-        // Mining loop with non-blocking job polling
+        // Mining loop with multi-threaded nonce search
         loop {
             if !running.load(Ordering::Relaxed) { break; }
             
@@ -161,7 +168,7 @@ fn pool_miner_loop(ts: Arc<Mutex<TuiState>>, btc: &str, wrk: &str, host: &str, p
             let cb_hash = double_sha256(&cb);
             let mr = build_merkle_root(&cb_hash, &sc.merkle_branches);
             
-            // Pre-build header (without nonce)
+            // Pre-build 76-byte header (without nonce)
             let ver = u32::from_str_radix(&sc.version, 16).unwrap_or(0);
             let prev = swap_endian(&sc.prevhash);
             let pb = hex::decode(&prev).unwrap_or_default();
@@ -176,43 +183,51 @@ fn pool_miner_loop(ts: Arc<Mutex<TuiState>>, btc: &str, wrk: &str, host: &str, p
             header_base[68..72].copy_from_slice(&tm.to_le_bytes());
             header_base[72..76].copy_from_slice(&bits.to_le_bytes());
             
-            // Mine 5000 nonces per iteration (increased from 500 for better throughput)
-            for i in 0..5000u64 {
-                let n = (nonce.wrapping_add(i)) as u32;
-                
-                // Quick pre-filter: reject ~90% of nonces cheaply
-                let filtered = (n & 0xF) != 0;
-                if filtered { continue; }
-                
-                let mut header = header_base;
-                header[76..80].copy_from_slice(&n.to_le_bytes());
-                let hash = double_sha256(&header);
-                
-                if hash_meets_target(&hash, &sc.nbits) {
-                    let nh = format!("{:08x}", n);
-                    let jid = sc.job_id.clone();
-                    let ntm = sc.ntime.clone();
-                    if sc.submit(&jid, &e2, &ntm, &nh).is_ok() {
-                        ts.lock().ok().map(|mut t| t.add_log(format!("✅ SHARE FOUND! {}", nh)));
-                        SHARES_ACCEPTED.fetch_add(1, Ordering::Relaxed);
-                    } else {
-                        SHARES_REJECTED.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
+            // Compute target array from nbits
+            let target = nbits_to_target(&sc.nbits);
+            
+            // Spawn multi-threaded miner workers on this job
+            let stats = Arc::new(MinerStats::new());
+            let _handles = spawn_miner_threads(
+                num_threads,
+                header_base,
+                target,
+                stats.clone(),
+                running.clone(),
+            );
+            
+            // Wait for threads to finish this batch and collect results
+            let total_in_batch = 1_000_000u64;
+            let batch_start = Instant::now();
+            
+            // Poll for completion with timeout
+            while batch_start.elapsed() < Duration::from_millis(200) && running.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(10));
             }
             
-            nonce = nonce.wrapping_add(5000);
-            HASHES_TOTAL.fetch_add(5000, Ordering::Relaxed);
+            // Update global counters
+            let batch_hashes = stats.total_hashes.load(Ordering::Relaxed);
+            let shares = stats.shares_found.load(Ordering::Relaxed);
+            HASHES_TOTAL.fetch_add(batch_hashes.max(total_in_batch), Ordering::Relaxed);
             
-            // Periodically log hashrate
+            if shares > 0 {
+                ts.lock().ok().map(|mut t| t.add_log(format!("🎯 Share(s) found in batch! ({})", shares)));
+                SHARES_ACCEPTED.fetch_add(shares, Ordering::Relaxed);
+            }
+            
+            // Periodically log summary
             if last_log.elapsed() >= Duration::from_secs(30) {
-                let h = HASHES_TOTAL.load(Ordering::Relaxed);
+                let total_h = HASHES_TOTAL.load(Ordering::Relaxed);
                 let sa = SHARES_ACCEPTED.load(Ordering::Relaxed);
                 let sr = SHARES_REJECTED.load(Ordering::Relaxed);
-                ts.lock().ok().map(|mut t| t.add_log(format!("Hashrate: ~{} H/s | Shares: {}/{}", 
-                    h as f64 / 30.0, sa, sr)));
+                ts.lock().ok().map(|mut t| t.add_log(format!(
+                    "Hashrate: ~{} H/s | Shares: {}/{}",
+                    total_h as f64 / 30.0, sa, sr
+                )));
                 last_log = Instant::now();
             }
+            
+            nonce = nonce.wrapping_add(total_in_batch);
             
             if !running.load(Ordering::Relaxed) { break; }
         }
