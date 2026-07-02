@@ -1,0 +1,8 @@
+{
+  "wallet": "bc1q5d7026rlav5t9whw55648a04n05apzxlxlq27p",
+  "rpc_host": "127.0.0.1",
+  "rpc_port": 8332,
+  "rpc_user": "qpzip_admin",
+  "rpc_password": "qpzip_secure_password_2024",
+  "threads": 16
+}
