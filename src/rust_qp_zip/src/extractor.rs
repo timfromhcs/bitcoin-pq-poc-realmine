@@ -32,12 +32,19 @@ impl Extractor {
     /// - [32..160]: ZK proof of signature validity (128 bytes)
     /// - [160..160 + LATTICE_DIMENSION * 4]: Quantized signature vector (1024 bytes)
     /// - [160 + LATTICE_DIMENSION * 4..]: Residual error vector (8-byte doubles)
+    /// Extract and validate a QP-ZIP witness program
+    /// 
+    /// Format of the witness program:
+    /// - [0..32]: Public key commitment (hash of the lattice public key)
+    /// - [32..160]: ZK proof of signature validity (128 bytes)
+    /// - [160..160 + LATTICE_DIMENSION * 3]: Quantized signature vector (768 bytes, 3 bytes per int)
+    /// - [160 + LATTICE_DIMENSION * 3..]: Residual error vector (1024 bytes, 4 bytes per float)
     pub fn extract_and_validate(
         &self,
         witness_program: &[u8],
         message: &[u8],
     ) -> Result<Vec<f64>> {
-        let min_size = 32 + 128 + LATTICE_DIMENSION * 4;
+        let min_size = 32 + 128 + LATTICE_DIMENSION * 3 + LATTICE_DIMENSION * 4;
         if witness_program.len() < min_size {
             return Err(QPZipError::InvalidInput);
         }
@@ -48,28 +55,28 @@ impl Extractor {
         // 2. Extract ZK proof
         let proof = &witness_program[32..160];
 
-        // 3. Extract quantized signature vector
+        // 3. Extract quantized signature vector (3 bytes each)
         let mut quantized = Vec::with_capacity(LATTICE_DIMENSION);
         for i in 0..LATTICE_DIMENSION {
-            let start = 160 + i * 4;
+            let start = 160 + i * 3;
             let mut bytes = [0u8; 4];
-            bytes.copy_from_slice(&witness_program[start..start + 4]);
-            quantized.push(i32::from_le_bytes(bytes));
+            bytes[0..3].copy_from_slice(&witness_program[start..start + 3]);
+            let mut val = i32::from_le_bytes(bytes);
+            if val & 0x00800000 != 0 {
+                val |= 0xFF000000u32 as i32;
+            }
+            quantized.push(val);
         }
 
-        // 4. Extract residual error vector
-        let residual_start = 160 + LATTICE_DIMENSION * 4;
-        let residual_bytes_len = witness_program.len() - residual_start;
-        if residual_bytes_len != LATTICE_DIMENSION * 8 {
-            return Err(QPZipError::InvalidInput);
-        }
-
+        // 4. Extract residual error vector (4 bytes each as f32)
+        let residual_start = 160 + LATTICE_DIMENSION * 3;
         let mut residuals = Vec::with_capacity(LATTICE_DIMENSION);
         for i in 0..LATTICE_DIMENSION {
-            let start = residual_start + i * 8;
-            let mut bytes = [0u8; 8];
-            bytes.copy_from_slice(&witness_program[start..start + 8]);
-            residuals.push(f64::from_le_bytes(bytes));
+            let start = residual_start + i * 4;
+            let mut bytes = [0u8; 4];
+            bytes.copy_from_slice(&witness_program[start..start + 4]);
+            let val = f32::from_le_bytes(bytes) as f64;
+            residuals.push(val);
         }
 
         // 5. Validate the ZK proof
@@ -103,14 +110,16 @@ impl Extractor {
         let proof = self.prover.prove(quantized, message)?;
         program.extend_from_slice(&proof);
 
-        // Serialize quantized vector
+        // Serialize quantized vector (3 bytes each)
         for &val in quantized {
-            program.extend_from_slice(&val.to_le_bytes());
+            let bytes = val.to_le_bytes();
+            program.extend_from_slice(&bytes[0..3]);
         }
 
-        // Serialize residuals
+        // Serialize residuals (4 bytes each as f32)
         for &val in residuals {
-            program.extend_from_slice(&val.to_le_bytes());
+            let float_val = val as f32;
+            program.extend_from_slice(&float_val.to_le_bytes());
         }
 
         Ok(program)
@@ -146,7 +155,7 @@ mod tests {
 
         for i in 0..LATTICE_DIMENSION {
             let expected = (quantized[i] as f64 / 1024.0) + residuals[i];
-            assert!((reconstructed[i] - expected).abs() < 1e-9);
+            assert!((reconstructed[i] - expected).abs() < 1e-7);
         }
     }
 }

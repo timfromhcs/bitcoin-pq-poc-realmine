@@ -3,18 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BIP-QP-ZIP Quantum-Proof CPU Miner</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <title>BIP-QP-ZIP Vulkan MTP Miner</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #08090c;
-            --panel-bg: rgba(18, 20, 28, 0.7);
-            --border-color: rgba(255, 255, 255, 0.08);
+            --bg-color: #06070a;
+            --panel-bg: rgba(13, 16, 24, 0.75);
+            --border-color: rgba(255, 255, 255, 0.06);
             --accent-cyan: #00f0ff;
-            --accent-purple: #bd00ff;
+            --accent-purple: #9d4edd;
             --accent-green: #39ff14;
-            --text-primary: #ffffff;
-            --text-secondary: #8c92a5;
+            --accent-red: #ff3366;
+            --text-primary: #f8f9fa;
+            --text-secondary: #94a3b8;
+            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
 
         * {
@@ -24,7 +26,7 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Outfit', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-primary);
             min-height: 100vh;
@@ -32,26 +34,26 @@
             justify-content: center;
             align-items: center;
             background-image: 
-                radial-gradient(circle at 10% 20%, rgba(189, 0, 255, 0.1) 0%, transparent 40%),
-                radial-gradient(circle at 90% 80%, rgba(0, 240, 255, 0.1) 0%, transparent 40%);
+                radial-gradient(circle at 10% 20%, rgba(157, 78, 221, 0.15) 0%, transparent 45%),
+                radial-gradient(circle at 90% 80%, rgba(0, 240, 255, 0.15) 0%, transparent 45%);
             overflow-x: hidden;
         }
 
         .container {
             width: 100%;
-            max-width: 1000px;
-            padding: 20px;
+            max-width: 1080px;
+            padding: 24px;
         }
 
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 30px;
+            margin-bottom: 32px;
         }
 
         .logo-section h1 {
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 800;
             background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
             -webkit-background-clip: text;
@@ -60,7 +62,7 @@
         }
 
         .logo-section p {
-            font-size: 13px;
+            font-size: 14px;
             color: var(--text-secondary);
             margin-top: 4px;
         }
@@ -68,18 +70,19 @@
         .status-badge {
             display: flex;
             align-items: center;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.04);
-            padding: 6px 14px;
-            border-radius: 20px;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 8px 16px;
+            border-radius: 30px;
             border: 1px solid var(--border-color);
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 600;
+            backdrop-filter: blur(10px);
         }
 
         .status-dot {
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             background-color: var(--text-secondary);
             box-shadow: 0 0 8px var(--text-secondary);
@@ -87,52 +90,57 @@
 
         .status-dot.active {
             background-color: var(--accent-green);
-            box-shadow: 0 0 10px var(--accent-green);
+            box-shadow: 0 0 12px var(--accent-green);
             animation: pulse 1.5s infinite;
         }
 
         @keyframes pulse {
             0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.2); opacity: 0.7; }
+            50% { transform: scale(1.25); opacity: 0.6; }
             100% { transform: scale(1); opacity: 1; }
         }
 
-        /* Config Section */
+        /* Config Card */
         .config-card {
             background: var(--panel-bg);
-            border-radius: 16px;
+            border-radius: 20px;
             border: 1px solid var(--border-color);
-            padding: 24px;
-            margin-bottom: 24px;
+            padding: 28px;
+            margin-bottom: 28px;
             backdrop-filter: blur(20px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            box-shadow: var(--card-shadow);
             display: flex;
             flex-wrap: wrap;
-            gap: 20px;
+            gap: 24px;
             align-items: flex-end;
         }
 
         .input-group {
-            flex: 1;
+            flex: 2;
             min-width: 250px;
+        }
+
+        .input-group.small {
+            flex: 1;
+            min-width: 120px;
         }
 
         .input-group label {
             display: block;
-            font-size: 12px;
-            font-weight: 600;
+            font-size: 11px;
+            font-weight: 700;
             color: var(--text-secondary);
             margin-bottom: 8px;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
         }
 
         .input-group input {
             width: 100%;
-            background: rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.4);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 14px 16px;
+            border-radius: 10px;
+            padding: 14px 18px;
             color: var(--text-primary);
             font-family: 'Fira Code', monospace;
             font-size: 14px;
@@ -142,89 +150,141 @@
         .input-group input:focus {
             outline: none;
             border-color: var(--accent-cyan);
-            box-shadow: 0 0 8px rgba(0, 240, 255, 0.2);
+            box-shadow: 0 0 12px rgba(0, 240, 255, 0.15);
         }
 
-        .btn-mine {
-            background: linear-gradient(135deg, var(--accent-cyan), #0072ff);
+        .btn-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn-action {
             border: none;
-            border-radius: 8px;
+            border-radius: 10px;
             color: white;
             padding: 14px 28px;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(0, 240, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-save {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-save:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--text-secondary);
+        }
+
+        .btn-mine {
+            background: linear-gradient(135deg, var(--accent-cyan), #0072ff);
+            box-shadow: 0 4px 15px rgba(0, 240, 255, 0.25);
         }
 
         .btn-mine:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 240, 255, 0.5);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(0, 240, 255, 0.4);
         }
 
         .btn-mine.mining {
-            background: linear-gradient(135deg, #ff0844, #ffb199);
-            box-shadow: 0 4px 15px rgba(255, 8, 68, 0.3);
+            background: linear-gradient(135deg, var(--accent-red), #e63946);
+            box-shadow: 0 4px 15px rgba(255, 51, 102, 0.25);
         }
 
         .btn-mine.mining:hover {
-            box-shadow: 0 6px 20px rgba(255, 8, 68, 0.5);
+            box-shadow: 0 6px 20px rgba(255, 51, 102, 0.4);
         }
 
         /* Stats Grid */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 20px;
-            margin-bottom: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 24px;
+            margin-bottom: 28px;
         }
 
         .stat-card {
             background: var(--panel-bg);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 20px;
-            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(15px);
+            box-shadow: var(--card-shadow);
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: transparent;
             transition: all 0.3s;
         }
 
+        .stat-card:hover::before {
+            background: linear-gradient(to bottom, var(--accent-cyan), var(--accent-purple));
+        }
+
         .stat-card:hover {
-            border-color: rgba(255, 255, 255, 0.15);
             transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.12);
         }
 
         .stat-card .label {
-            font-size: 12px;
-            font-weight: 600;
+            font-size: 11px;
+            font-weight: 700;
             color: var(--text-secondary);
             text-transform: uppercase;
+            letter-spacing: 1px;
             margin-bottom: 8px;
         }
 
         .stat-card .value {
-            font-size: 28px;
+            font-size: 26px;
             font-weight: 800;
             font-family: 'Fira Code', monospace;
-            background: linear-gradient(135deg, #ffffff, #a5aabf);
+            background: linear-gradient(135deg, #ffffff, #cbd5e1);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
         .stat-card .desc {
-            font-size: 11px;
+            font-size: 12px;
             color: var(--text-secondary);
             margin-top: 6px;
         }
 
-        /* Terminal Logs */
+        /* Workspace Grid */
+        .workspace-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 768px) {
+            .workspace-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .terminal-card {
-            background: rgba(5, 6, 8, 0.95);
+            background: rgba(5, 7, 12, 0.95);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 20px;
+            border-radius: 16px;
+            padding: 24px;
             font-family: 'Fira Code', monospace;
-            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+            box-shadow: var(--card-shadow);
         }
 
         .terminal-header {
@@ -232,9 +292,9 @@
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            padding-bottom: 10px;
-            margin-bottom: 12px;
-            font-size: 11px;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+            font-size: 12px;
             color: var(--text-secondary);
         }
 
@@ -249,16 +309,16 @@
             border-radius: 50%;
         }
 
-        .term-dot.red { background-color: #ff5f56; }
+        .term-dot.red { background-color: var(--accent-red); }
         .term-dot.yellow { background-color: #ffbd2e; }
-        .term-dot.green { background-color: #27c93f; }
+        .term-dot.green { background-color: var(--accent-green); }
 
         .terminal-body {
-            height: 250px;
+            height: 300px;
             overflow-y: auto;
             font-size: 12px;
             line-height: 1.6;
-            color: #d1d5db;
+            color: #e2e8f0;
         }
 
         .terminal-body::-webkit-scrollbar {
@@ -266,12 +326,13 @@
         }
 
         .terminal-body::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.08);
             border-radius: 3px;
         }
 
         .log-entry {
             margin-bottom: 6px;
+            word-break: break-all;
         }
 
         .log-time {
@@ -279,10 +340,58 @@
             margin-right: 8px;
         }
 
-        .log-info { color: #5bc0be; }
+        .log-info { color: #38bdf8; }
         .log-success { color: var(--accent-green); }
-        .log-warning { color: #f4d35e; }
-        .log-qp { color: #e0aaff; }
+        .log-warning { color: #fbbf24; }
+        .log-qp { color: #c084fc; }
+
+        /* Hardware Panel */
+        .hw-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: blur(15px);
+            box-shadow: var(--card-shadow);
+        }
+
+        .hw-card h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding-bottom: 12px;
+            letter-spacing: -0.2px;
+        }
+
+        .hw-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            font-size: 14px;
+        }
+
+        .hw-item:last-child {
+            border-bottom: none;
+        }
+
+        .hw-item .key {
+            color: var(--text-secondary);
+        }
+
+        .hw-item .val {
+            font-family: 'Fira Code', monospace;
+            font-weight: 600;
+        }
+
+        .hw-item .val.green {
+            color: var(--accent-green);
+        }
+
+        .hw-item .val.red {
+            color: var(--accent-red);
+        }
     </style>
 </head>
 <body>
@@ -290,7 +399,7 @@
         <header>
             <div class="logo-section">
                 <h1>BIP-QP-ZIP</h1>
-                <p>Quantum-Resistant Lattice Witness CPU Miner</p>
+                <p>Vulkan MTP Mining Dashboard</p>
             </div>
             <div class="status-badge">
                 <div class="status-dot" id="status-dot"></div>
@@ -300,46 +409,79 @@
 
         <section class="config-card">
             <div class="input-group">
-                <label for="wallet">Bitcoin Wallet Address (Mainnet)</label>
-                <input type="text" id="wallet" value="bc1qpzip8888888888888888888888888888888888" placeholder="Enter bc1 address...">
+                <label for="wallet">Bitcoin Wallet Address</label>
+                <input type="text" id="wallet" placeholder="Enter bc1 address...">
             </div>
-            <button class="btn-mine" id="btn-mine" onclick="toggleMining()">Start Mining</button>
+            <div class="input-group">
+                <label for="pool">Stratum Pool Address</label>
+                <input type="text" id="pool" placeholder="Enter host:port...">
+            </div>
+            <div class="input-group small">
+                <label for="threads">CPU Threads</label>
+                <input type="number" id="threads" min="1" max="128">
+            </div>
+            <div class="btn-group">
+                <button class="btn-action btn-save" onclick="saveSettings()">Save Settings</button>
+                <button class="btn-action btn-mine" id="btn-mine" onclick="toggleMining()">Start Mining</button>
+            </div>
         </section>
 
         <section class="stats-grid">
             <div class="stat-card">
                 <div class="label">Hashrate</div>
                 <div class="value" id="stat-hashrate">0.00 H/s</div>
-                <div class="desc">Using Multi-threaded CPU</div>
+                <div class="desc">Active Hashing Speed</div>
             </div>
             <div class="stat-card">
-                <div class="label">Blocks Mined</div>
-                <div class="value" id="stat-blocks">0</div>
-                <div class="desc">Solitaire candidates solved</div>
+                <div class="label">Shares Accepted</div>
+                <div class="value" id="stat-shares-accepted">0</div>
+                <div class="desc">Valid pool submissions</div>
             </div>
             <div class="stat-card">
-                <div class="label">PQ Witness Saved</div>
-                <div class="value" id="stat-saved">0 KB</div>
-                <div class="desc">QP-ZIP Quantization savings</div>
+                <div class="label">Shares Rejected</div>
+                <div class="value" id="stat-shares-rejected">0</div>
+                <div class="desc">Invalid pool submissions</div>
             </div>
             <div class="stat-card">
-                <div class="label">Est. Earnings</div>
-                <div class="value" id="stat-earned">0.00 BTC</div>
-                <div class="desc">Simulation rewards</div>
+                <div class="label">Pool Difficulty</div>
+                <div class="value" id="stat-difficulty">1.00</div>
+                <div class="desc">Current stratum difficulty</div>
             </div>
         </section>
 
-        <section class="terminal-card">
-            <div class="terminal-header">
-                <span>stratum-terminal v1.0.0</span>
-                <div class="terminal-buttons">
-                    <div class="term-dot red"></div>
-                    <div class="term-dot yellow"></div>
-                    <div class="term-dot green"></div>
+        <section class="workspace-grid">
+            <div class="terminal-card">
+                <div class="terminal-header">
+                    <span>stratum-terminal v1.1.0</span>
+                    <div class="terminal-buttons">
+                        <div class="term-dot red"></div>
+                        <div class="term-dot yellow"></div>
+                        <div class="term-dot green"></div>
+                    </div>
+                </div>
+                <div class="terminal-body" id="terminal-body">
+                    <div class="log-entry"><span class="log-time">[00:00:00]</span><span class="log-info">Dashboard initialized. Waiting for commands...</span></div>
                 </div>
             </div>
-            <div class="terminal-body" id="terminal-body">
-                <div class="log-entry"><span class="log-time">[12:38:15]</span><span class="log-info">Miner UI initialized. Waiting for mining commands...</span></div>
+
+            <div class="hw-card">
+                <h3>System & Hashing Statistics</h3>
+                <div class="hw-item">
+                    <span class="key">CPU Capacity</span>
+                    <span class="val" id="hw-cpu-threads">0 Threads</span>
+                </div>
+                <div class="hw-item">
+                    <span class="key">GPU Acceleration</span>
+                    <span class="val" id="hw-gpu-active">Checking...</span>
+                </div>
+                <div class="hw-item">
+                    <span class="key">Network Difficulty</span>
+                    <span class="val" id="hw-net-diff">1.00</span>
+                </div>
+                <div class="hw-item">
+                    <span class="key">Est. Time to 1 BTC</span>
+                    <span class="val green" id="hw-time-btc">Infinity</span>
+                </div>
             </div>
         </section>
     </div>
@@ -347,6 +489,52 @@
     <script>
         let isMining = false;
         let updateInterval = null;
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            await fetchStats();
+            // Start updating statistics every second
+            updateInterval = setInterval(fetchStats, 1000);
+        });
+
+        function formatHashrate(h) {
+            if (h >= 1e12) return `${(h / 1e12).toFixed(2)} TH/s`;
+            if (h >= 1e9) return `${(h / 1e9).toFixed(2)} GH/s`;
+            if (h >= 1e6) return `${(h / 1e6).toFixed(2)} MH/s`;
+            if (h >= 1e3) return `${(h / 1e3).toFixed(2)} KH/s`;
+            return `${h.toFixed(2)} H/s`;
+        }
+
+        function formatDifficulty(d) {
+            if (d >= 1e12) return `${(d / 1e12).toFixed(2)} T`;
+            if (d >= 1e9) return `${(d / 1e9).toFixed(2)} G`;
+            if (d >= 1e6) return `${(d / 1e6).toFixed(2)} M`;
+            if (d >= 1e3) return `${(d / 1e3).toFixed(2)} K`;
+            return d.toFixed(2);
+        }
+
+        function formatTimeToBTC(hashrate, netDiff) {
+            if (!hashrate || hashrate <= 0 || !netDiff || netDiff <= 0) {
+                return "Infinity";
+            }
+            // Expected blocks to find 1 BTC = 1 / 3.125 = 0.32 blocks
+            // Time to 1 BTC = 0.32 * (netDiff * 2^32) / hashrate
+            const timeInSeconds = 0.32 * (netDiff * Math.pow(2, 32)) / hashrate;
+            
+            const minutes = timeInSeconds / 60;
+            const hours = minutes / 60;
+            const days = hours / 24;
+            const years = days / 365.25;
+            
+            if (years >= 1) {
+                return `${years.toLocaleString(undefined, {maximumFractionDigits: 1})} Years`;
+            } else if (days >= 1) {
+                return `${days.toLocaleString(undefined, {maximumFractionDigits: 1})} Days`;
+            } else if (hours >= 1) {
+                return `${hours.toLocaleString(undefined, {maximumFractionDigits: 1})} Hours`;
+            } else {
+                return `${minutes.toLocaleString(undefined, {maximumFractionDigits: 1})} Minutes`;
+            }
+        }
 
         function addLog(text, type = 'info') {
             const body = document.getElementById('terminal-body');
@@ -361,6 +549,29 @@
             body.scrollTop = body.scrollHeight;
         }
 
+        async function saveSettings() {
+            const wallet = document.getElementById('wallet').value.trim();
+            const pool = document.getElementById('pool').value.trim();
+            const threads = document.getElementById('threads').value;
+
+            if (!wallet || !pool || !threads) {
+                alert('Please fill out all settings before saving!');
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/settings/save?wallet=${encodeURIComponent(wallet)}&pool=${encodeURIComponent(pool)}&threads=${threads}`);
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    addLog('✓ Settings saved successfully. Configuration reloaded.', 'success');
+                } else {
+                    addLog(`⚠ Failed to save settings: ${data.message}`, 'warning');
+                }
+            } catch (e) {
+                addLog(`Error saving settings: ${e.message}`, 'warning');
+            }
+        }
+
         async function toggleMining() {
             const wallet = document.getElementById('wallet').value.trim();
             if (!wallet) {
@@ -373,7 +584,6 @@
             const statusText = document.getElementById('status-text');
 
             if (!isMining) {
-                // Start mining
                 try {
                     const res = await fetch(`/api/start?wallet=${encodeURIComponent(wallet)}`);
                     const data = await res.json();
@@ -383,31 +593,24 @@
                         btn.classList.add('mining');
                         dot.className = 'status-dot active';
                         statusText.innerText = 'Mining on Mainnet';
-                        addLog(`Connecting to pool.bip-qp-zip.org:3333...`, 'info');
-                        addLog(`Authorized worker for wallet: ${wallet}`, 'success');
-                        addLog(`Received new job from pool. Block height #849,214. Difficulty: 16.4T`, 'info');
-                        
-                        updateInterval = setInterval(fetchStats, 1000);
+                        addLog('Stratum miner started successfully.', 'info');
                     } else {
                         addLog(`Failed to start mining: ${data.message}`, 'warning');
                     }
                 } catch (e) {
-                    addLog(`Error connecting to miner backend: ${e.message}`, 'warning');
+                    addLog(`Error starting miner: ${e.message}`, 'warning');
                 }
             } else {
-                // Stop mining
                 try {
                     const res = await fetch('/api/stop');
                     const data = await res.json();
                     if (data.status === 'ok') {
-                        clearInterval(updateInterval);
                         isMining = false;
                         btn.innerText = 'Start Mining';
                         btn.classList.remove('mining');
                         dot.className = 'status-dot';
                         statusText.innerText = 'Disconnected';
-                        addLog(`Mining stopped by user.`, 'info');
-                        
+                        addLog('Mining stopped by user.', 'info');
                         document.getElementById('stat-hashrate').innerText = '0.00 H/s';
                     }
                 } catch (e) {
@@ -421,10 +624,44 @@
                 const res = await fetch('/api/stats');
                 const stats = await res.json();
                 
-                document.getElementById('stat-hashrate').innerText = `${stats.hashrate.toFixed(2)} H/s`;
-                document.getElementById('stat-blocks').innerText = stats.blocks_mined;
-                document.getElementById('stat-saved').innerText = `${stats.bytes_saved.toFixed(2)} KB`;
-                document.getElementById('stat-earned').innerText = `${stats.earned.toFixed(8)} BTC`;
+                isMining = stats.is_mining;
+                const btn = document.getElementById('btn-mine');
+                const dot = document.getElementById('status-dot');
+                const statusText = document.getElementById('status-text');
+
+                if (isMining) {
+                    btn.innerText = 'Stop Mining';
+                    btn.classList.add('mining');
+                    dot.className = 'status-dot active';
+                    statusText.innerText = 'Mining on Mainnet';
+                } else {
+                    btn.innerText = 'Start Mining';
+                    btn.classList.remove('mining');
+                    dot.className = 'status-dot';
+                    statusText.innerText = 'Disconnected';
+                }
+
+                document.getElementById('stat-hashrate').innerText = formatHashrate(stats.hashrate);
+                document.getElementById('stat-shares-accepted').innerText = stats.shares_accepted;
+                document.getElementById('stat-shares-rejected').innerText = stats.shares_rejected;
+                document.getElementById('stat-difficulty').innerText = stats.current_difficulty.toFixed(2);
+                
+                // Populate inputs if not focused
+                if (document.activeElement !== document.getElementById('wallet')) {
+                    document.getElementById('wallet').value = stats.wallet;
+                }
+                if (document.activeElement !== document.getElementById('pool')) {
+                    document.getElementById('pool').value = stats.pool;
+                }
+                if (document.activeElement !== document.getElementById('threads')) {
+                    document.getElementById('threads').value = stats.cpu_threads;
+                }
+
+                document.getElementById('hw-cpu-threads').innerText = `${stats.cpu_threads} Threads`;
+                document.getElementById('hw-gpu-active').innerText = stats.gpu_active ? "ACTIVE (Vulkan)" : "INACTIVE";
+                document.getElementById('hw-gpu-active').className = stats.gpu_active ? "val green" : "val red";
+                document.getElementById('hw-net-diff').innerText = formatDifficulty(stats.network_difficulty);
+                document.getElementById('hw-time-btc').innerText = formatTimeToBTC(stats.hashrate, stats.network_difficulty);
                 
                 if (stats.logs && stats.logs.length > 0) {
                     stats.logs.forEach(log => {
