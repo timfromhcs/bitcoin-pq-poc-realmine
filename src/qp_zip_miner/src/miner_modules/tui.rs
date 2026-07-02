@@ -67,7 +67,7 @@ fn render_ui(f:&mut Frame,s:&TuiState){
         .split(f.size());
     f.render_widget(
         Paragraph::new(Span::styled(
-            format!("HCSminer v2.0 | Hashes: {} | Pool: {} | [Q]uit",
+            format!("HCSminer v3.0 | Hashes: {} | Pool: {} | [Q]uit",
                 s.total_hashes,
                 if s.pool_connected{"CONN"}else{"DOWN"}),
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)

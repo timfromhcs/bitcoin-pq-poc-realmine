@@ -24,7 +24,7 @@ impl VulkanEngine {
         unsafe {
             let entry = ash::Entry::load().map_err(|e| format!("Load: {}", e))?;
             let ac = std::ffi::CString::new("HCSminer v2.0").unwrap();
-            let ec = std::ffi::CString::new("HCSminer MTP Engine").unwrap();
+            let ec = std::ffi::CString::new("HCSminer v3.0 Engine").unwrap();
             let ai = ash::vk::ApplicationInfo::builder()
                 .application_name(&ac).application_version(ash::vk::make_api_version(0,2,0,0))
                 .engine_name(&ec).engine_version(ash::vk::make_api_version(0,2,0,0))

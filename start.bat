@@ -1,5 +1,5 @@
 @echo off
-title HCSminer v2.0 - Post-Quantum Pool Miner
+title HCSminer v3.0 - Post-Quantum Pool Miner
 cd /d "%~dp0"
 echo ====================================================
 echo    HCSminer v2.0 - Pool Mining (PPLNS)

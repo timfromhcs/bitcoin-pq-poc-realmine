@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
@@ -22,33 +23,29 @@ fn load_config() -> MinerConfig { MinerConfig::load("miner_config.toml") }
 
 fn main() {
     println!("============================================");
-    println!("    HCSminer v2.0 - Pool Mining (PPLNS)");
+    println!("    HCSminer v3.0 - Post-Quantum Pool Miner");
     println!("============================================");
     let cfg = load_config();
     println!("BTC: {}", cfg.btc_address);
     println!("Threads: {}", cfg.threads);
     println!("Pool: {}:{}", cfg.pool_host, cfg.pool_port);
-    
+
     let vk = VulkanEngine::new(cfg.vulkan_device_index);
-    if vk.available { 
-        println!("GPU: {} (VRAM: {:.0}MB)", vk.device_name, vk.vram_mb); 
+    if vk.available {
+        println!("GPU: {} (VRAM: {:.0}MB)", vk.device_name, vk.vram_mb);
     } else {
         println!("GPU: CPU-only mode (Vulkan unavailable)");
     }
-    
+
     let ts = Arc::new(Mutex::new(TuiState::new()));
-    let tt = ts.clone();
     let running = Arc::new(AtomicBool::new(true));
-    let r2 = running.clone();
-    
-    // Start TUI in separate thread
+
     if cfg.enable_tui {
-        thread::spawn(move || {
-            let _ = run_tui(tt, r2);
-        });
+        let tt = ts.clone();
+        let r2 = running.clone();
+        thread::spawn(move || { let _ = run_tui(tt, r2); });
     }
-    
-    // Start TUI update thread
+
     let ts2 = ts.clone();
     let r3 = running.clone();
     let vk_avail = vk.available;
@@ -63,7 +60,6 @@ fn main() {
             let hashrate = (h - last_hashes) as f64 / dt;
             last_hashes = h;
             last_update = Instant::now();
-            
             if let Ok(mut t) = ts2.lock() {
                 t.cpu_hashrate = hashrate;
                 t.pool_connected = POOL_CONNECTED.load(Ordering::Relaxed);
@@ -75,28 +71,24 @@ fn main() {
             }
         }
     });
-    
-    // Start pool miner loop
+
     let btc = cfg.btc_address.clone();
     let wrk = cfg.worker_name.clone();
     let host = cfg.pool_host.clone();
     let port = cfg.pool_port;
+    let threads = cfg.threads;
     let r4 = running.clone();
-    
+
     thread::spawn(move || {
-        pool_miner_loop(ts.clone(), &btc, &wrk, &host, port, cfg.threads, r4);
+        pool_miner_loop(ts.clone(), &btc, &wrk, &host, port, threads, r4);
     });
-    
+
     println!("Mining. Press 'q' in TUI to quit.");
-    
-    // Main thread waits for shutdown
     while running.load(Ordering::Relaxed) {
         thread::sleep(Duration::from_millis(500));
     }
-    
     println!("Shutdown.");
 }
-
 fn pool_miner_loop(
     ts: Arc<Mutex<TuiState>>,
     btc: &str,
@@ -107,11 +99,13 @@ fn pool_miner_loop(
     running: Arc<AtomicBool>,
 ) {
     let num_threads = num_threads.max(1);
+    let batch_size_per_thread: u64 = 1_000_000 / num_threads as u64;
+    let total_in_batch = num_threads as u64 * batch_size_per_thread;
+
     loop {
         if !running.load(Ordering::Relaxed) { break; }
-        
-        ts.lock().ok().map(|mut t| t.add_log(format!("Connecting Stratum {}...", port)));
-        
+        ts.lock().ok().map(|mut t| t.add_log("Connecting...".to_string()));
+
         let mut sc = StratumClient::new(btc, wrk);
         match sc.connect(host, port) {
             Ok(()) => {
@@ -119,123 +113,103 @@ fn pool_miner_loop(
                 ts.lock().ok().map(|mut t| t.add_log("Connected!".into()));
             }
             Err(e) => {
-                ts.lock().ok().map(|mut t| t.add_log(format!("Connection failed: {}", e)));
+                ts.lock().ok().map(|mut t| t.add_log(format!("Failed: {}", e)));
                 if !running.load(Ordering::Relaxed) { break; }
                 thread::sleep(Duration::from_secs(5));
                 continue;
             }
         }
-        
-        // Subscribe and authorize
+
         if sc.subscribe().is_err() || sc.authorize().is_err() {
-            ts.lock().ok().map(|mut t| t.add_log("Auth failed, reconnecting...".into()));
+            ts.lock().ok().map(|mut t| t.add_log("Auth failed".into()));
             POOL_CONNECTED.store(false, Ordering::Relaxed);
             thread::sleep(Duration::from_secs(3));
             continue;
         }
-        
-        ts.lock().ok().map(|mut t| t.add_log("Authorized! Mining...".into()));
-        
+
+        ts.lock().ok().map(|mut t| t.add_log("Mining!".into()));
+
         let mut nonce = rand::thread_rng().gen::<u64>();
         let mut last_log = Instant::now();
-        
-        // Mining loop with multi-threaded nonce search
+
         loop {
             if !running.load(Ordering::Relaxed) { break; }
-            
-            // Check for new jobs (non-blocking)
+
             match sc.check_notify_nonblock() {
-                Ok(true) => {
-                    if sc.clean_jobs {
-                        nonce = rand::thread_rng().gen::<u64>();
-                    }
-                }
-                Ok(false) => {} // no new job, continue mining
-                Err(_) => {
-                    ts.lock().ok().map(|mut t| t.add_log("Connection lost, reconnecting...".into()));
-                    break;
-                }
+                Ok(true) => { if sc.clean_jobs { nonce = rand::thread_rng().gen::<u64>(); } }
+                Ok(false) => {}
+                Err(_) => { ts.lock().ok().map(|mut t| t.add_log("Lost conn".into())); break; }
             }
-            
-            if sc.job_id.is_empty() { 
-                thread::sleep(Duration::from_millis(10));
-                continue; 
-            }
-            
-            // Build coinbase and merkle root
+
+            if sc.job_id.is_empty() { thread::sleep(Duration::from_millis(10)); continue; }
+
             let e2 = format!("{:08x}", (nonce & 0xFFFFFFFF) as u32);
             let cb = build_coinbase(&sc.coinb1, &sc.extranonce1, &e2, &sc.coinb2);
             let cb_hash = double_sha256(&cb);
             let mr = build_merkle_root(&cb_hash, &sc.merkle_branches);
-            
-            // Pre-build 76-byte header (without nonce)
+
             let ver = u32::from_str_radix(&sc.version, 16).unwrap_or(0);
             let prev = swap_endian(&sc.prevhash);
             let pb = hex::decode(&prev).unwrap_or_default();
             let mr_rev: Vec<u8> = mr.iter().rev().cloned().collect();
             let tm = u32::from_str_radix(&sc.ntime, 16).unwrap_or(0);
             let bits = u32::from_str_radix(&sc.nbits, 16).unwrap_or(0);
-            
+
             let mut header_base = [0u8; 76];
             header_base[..4].copy_from_slice(&ver.to_le_bytes());
             if pb.len() >= 32 { header_base[4..36].copy_from_slice(&pb[..32]); }
             header_base[36..68].copy_from_slice(&mr_rev);
             header_base[68..72].copy_from_slice(&tm.to_le_bytes());
             header_base[72..76].copy_from_slice(&bits.to_le_bytes());
-            
-            // Compute target array from nbits
+
             let target = nbits_to_target(&sc.nbits);
-            
-            // Spawn multi-threaded miner workers on this job
+            let share_queue: Arc<Mutex<Vec<u32>>> = Arc::new(Mutex::new(Vec::new()));
             let stats = Arc::new(MinerStats::new());
-            let _handles = spawn_miner_threads(
-                num_threads,
-                header_base,
-                target,
-                stats.clone(),
-                running.clone(),
+
+            let handles = spawn_miner_threads(
+                num_threads, header_base, target,
+                stats.clone(), share_queue.clone(), batch_size_per_thread,
             );
-            
-            // Wait for threads to finish this batch and collect results
-            let total_in_batch = 1_000_000u64;
-            let batch_start = Instant::now();
-            
-            // Poll for completion with timeout
-            while batch_start.elapsed() < Duration::from_millis(200) && running.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_millis(10));
+
+            for handle in handles { let _ = handle.join(); }
+
+            let mut found_nonces: Vec<u32> = Vec::new();
+            if let Ok(mut q) = share_queue.lock() { std::mem::swap(&mut found_nonces, &mut q); }
+
+            for nf in &found_nonces {
+                let nh = format!("{:08x}", nf);
+                let jid = sc.job_id.clone();
+                let ntm = sc.ntime.clone();
+                let e2s = format!("{:08x}", (nonce & 0xFFFFFFFF) as u32);
+                if sc.submit(&jid, &e2s, &ntm, &nh).is_ok() {
+                    ts.lock().ok().map(|mut t| t.add_log(format!("Share! {}", nh)));
+                    SHARES_ACCEPTED.fetch_add(1, Ordering::Relaxed);
+                } else {
+                    SHARES_REJECTED.fetch_add(1, Ordering::Relaxed);
+                }
             }
-            
-            // Update global counters
-            let batch_hashes = stats.total_hashes.load(Ordering::Relaxed);
-            let shares = stats.shares_found.load(Ordering::Relaxed);
-            HASHES_TOTAL.fetch_add(batch_hashes.max(total_in_batch), Ordering::Relaxed);
-            
-            if shares > 0 {
-                ts.lock().ok().map(|mut t| t.add_log(format!("🎯 Share(s) found in batch! ({})", shares)));
-                SHARES_ACCEPTED.fetch_add(shares, Ordering::Relaxed);
-            }
-            
-            // Periodically log summary
+
+            let bh = stats.total_hashes.load(Ordering::Relaxed);
+            HASHES_TOTAL.fetch_add(bh.max(total_in_batch), Ordering::Relaxed);
+
             if last_log.elapsed() >= Duration::from_secs(30) {
-                let total_h = HASHES_TOTAL.load(Ordering::Relaxed);
+                let th = HASHES_TOTAL.load(Ordering::Relaxed);
                 let sa = SHARES_ACCEPTED.load(Ordering::Relaxed);
                 let sr = SHARES_REJECTED.load(Ordering::Relaxed);
                 ts.lock().ok().map(|mut t| t.add_log(format!(
                     "Hashrate: ~{} H/s | Shares: {}/{}",
-                    total_h as f64 / 30.0, sa, sr
+                    th as f64 / 30.0, sa, sr
                 )));
                 last_log = Instant::now();
             }
-            
+
             nonce = nonce.wrapping_add(total_in_batch);
-            
             if !running.load(Ordering::Relaxed) { break; }
         }
-        
+
         POOL_CONNECTED.store(false, Ordering::Relaxed);
         if !running.load(Ordering::Relaxed) { break; }
         ts.lock().ok().map(|mut t| t.add_log("Reconnecting...".into()));
         thread::sleep(Duration::from_secs(3));
     }
 }
-
