@@ -49,3 +49,4 @@ Made with love by timfromhcs and @hcmedia
 - OpenCL gated behind `#[cfg(feature = "opencl")]`
 - TUI operations must be non-blocking
 - Pool RPC failure = retry, never panic
+
