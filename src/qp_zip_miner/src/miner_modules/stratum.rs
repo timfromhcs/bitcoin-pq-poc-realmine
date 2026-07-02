@@ -22,6 +22,26 @@ pub struct StratumClient {
 }
 
 impl StratumClient {
+    pub fn check_notify_nonblock(&mut self) -> Result<bool, String> {
+        if let Some(ref mut s) = self.stream {
+            let mut buf = [0u8; 1];
+            s.set_read_timeout(Some(std::time::Duration::from_millis(1))).ok();
+            match s.peek(&mut buf) {
+                Ok(_) => {
+                    s.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
+                    self.wait_for_notify()
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    s.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
+                    Ok(false)
+                }
+                Err(e) => {
+                    s.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok();
+                    Err(format!("NB: {}", e))
+                }
+            }
+        } else { Err("No stream".to_string()) }
+    }
     pub fn new(btc: &str, wrk: &str) -> Self {
         StratumClient {
             stream: None, connected: false, extranonce1: String::new(), extranonce2_size: 0,
