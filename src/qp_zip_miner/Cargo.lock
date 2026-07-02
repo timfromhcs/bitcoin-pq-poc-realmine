@@ -244,6 +244,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "hcsminer"
+version = "2.0.0"
+dependencies = [
+ "ash",
+ "base64 0.21.7",
+ "crossterm",
+ "hex",
+ "lazy_static",
+ "num_cpus",
+ "rand",
+ "ratatui",
+ "raw-window-handle",
+ "rust_qp_zip",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "sha2",
+ "toml",
+ "ureq",
+]
+
+[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -575,28 +597,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "qp_zip_miner"
-version = "2.0.0"
-dependencies = [
- "ash",
- "base64 0.21.7",
- "crossterm",
- "hex",
- "lazy_static",
- "num_cpus",
- "rand",
- "ratatui",
- "raw-window-handle",
- "rust_qp_zip",
- "serde",
- "serde_derive",
- "serde_json",
- "sha2",
- "toml",
- "ureq",
 ]
 
 [[package]]

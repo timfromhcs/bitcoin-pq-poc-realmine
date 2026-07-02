@@ -1,5 +1,5 @@
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -38,12 +38,7 @@ impl TuiState {
             log_messages: Vec::new(),
         }
     }
-    pub fn add_log(&mut self, msg: String) {
-        self.log_messages.push(msg);
-        if self.log_messages.len() > 100 {
-            self.log_messages.remove(0);
-        }
-    }
+    pub fn add_log(&mut self, msg: String) { self.log_messages.push(msg); if self.log_messages.len() > 100 { self.log_messages.remove(0); } }
 }
 
 pub fn run_tui(state: Arc<Mutex<TuiState>>) -> Result<(), Box<dyn std::error::Error>> {

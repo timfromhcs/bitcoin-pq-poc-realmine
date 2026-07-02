@@ -3,7 +3,6 @@
 //! CRASH FIX v2.0: Added bounds checking on all slice accesses, safe fallible conversions.
 
 use alloc::vec::Vec;
-use alloc::vec;
 use crate::quantizer::{Quantizer, LATTICE_DIMENSION};
 use crate::zk_prover::{ZKProver, PROOF_SIZE};
 use crate::{Result, QPZipError};

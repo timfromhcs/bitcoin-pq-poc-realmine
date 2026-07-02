@@ -22,7 +22,6 @@ use opencl3::program::Program;
 
 // TUI mining modules
 mod miner_modules;
-use miner_modules::config::MinerConfig as AdvancedConfig;
 use miner_modules::tui::{TuiState, run_tui};
 use miner_modules::vulkan::VulkanEngine;
 // miner_core functions imported explicitly (not using glob to avoid conflicts with local defs)

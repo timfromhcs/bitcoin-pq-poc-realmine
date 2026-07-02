@@ -1,8 +1,8 @@
 use crate::miner_modules::config::MinerConfig;
 use sha2::{Sha256, Digest};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
-use std::time::Instant;
-use crate::miner_modules::tui::TuiState;
+
+
+
 const PROBABILISTIC_HASH_SEED: u64 = 0x9e3779b97f4a7c15;
 
 pub fn double_sha256(data: &[u8]) -> [u8; 32] {
@@ -58,7 +58,7 @@ pub fn hash_below_network_target(hash: &[u8; 32], bits: u32) -> bool {
 
 pub fn submit_block(block_hex: &str, config: &MinerConfig) -> Result<(), String> {
     let url = format!("http://{}:{}", config.rpc_host, config.rpc_port);
-    let auth = base64::encode(format!("{}:{}", config.rpc_user, config.rpc_password));
+    let auth = base64::Engine::encode(&base64::engine::general_purpose::STANDARD,format!("{}:{}", config.rpc_user, config.rpc_password));
     let body = format!(r#"{{"jsonrpc":"1.0","id":"miner","method":"submitblock","params":["{}"]}}"#, block_hex);
     let response = ureq::post(&url)
         .set("Authorization", &format!("Basic {}", auth))
@@ -71,7 +71,7 @@ pub fn submit_block(block_hex: &str, config: &MinerConfig) -> Result<(), String>
 
 pub fn get_block_template(config: &MinerConfig) -> Result<String, String> {
     let url = format!("http://{}:{}", config.rpc_host, config.rpc_port);
-    let auth = base64::encode(format!("{}:{}", config.rpc_user, config.rpc_password));
+    let auth = base64::Engine::encode(&base64::engine::general_purpose::STANDARD,format!("{}:{}", config.rpc_user, config.rpc_password));
     let body = r#"{"jsonrpc":"1.0","id":"miner","method":"getblocktemplate","params":[{"rules":["segwit"]}]}"#;
     let resp = ureq::post(&url)
         .set("Authorization", &format!("Basic {}", auth))

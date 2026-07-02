@@ -11,10 +11,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use alloc::string::String;
-use alloc::vec::Vec;
-use core::ffi::{c_char, c_int, c_void};
-use core::slice;
+use core::ffi::{c_char, c_void};
 
 pub mod quantizer;
 pub mod zk_prover;

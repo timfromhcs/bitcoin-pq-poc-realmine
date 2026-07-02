@@ -9,7 +9,7 @@ use core::ffi::{c_double, c_int};
 use core::slice;
 use crate::extractor::Extractor;
 use crate::quantizer::{Quantizer, LATTICE_DIMENSION};
-use crate::{QPZipError, QPZipContext};
+use crate::QPZipError;
 
 /// Create a new Extractor instance
 #[no_mangle]
