@@ -1,0 +1,12 @@
+[package]
+name = "qp_zip_miner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rust_qp_zip = { path = "../rust_qp_zip" }
+sha2 = "0.10.8"
+rand = "0.8.5"
+lazy_static = "1.4.0"
+opencl3 = { version = "0.12.3", features = ["dynamic"] }
+num_cpus = "1.16.0"

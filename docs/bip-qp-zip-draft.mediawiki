@@ -1,0 +1,72 @@
+<pre>
+  BIP: bip-qp-zip-draft
+  Title: Quantum-Proof Zero-Knowledge Inflight Processing (QP-ZIP)
+  Author: Bitcoin Core Consensus Architect <consensus-architect@bitcoin.org>
+  Comments-Summary: No comments yet.
+  Status: Draft
+  Type: Standards Track
+  Created: 2026-07-02
+  License: BSD-3-Clause
+</pre>
+
+==Abstract==
+
+This BIP specifies the integration of post-quantum signature verification into the Bitcoin consensus engine. By defining a new Segregated Witness program version (Witness Version 2), this BIP introduces lattice-based vector quantization and zero-knowledge (ZK) state compression to reduce the on-chain footprint of post-quantum signatures while maintaining absolute backward compatibility with legacy clients. 
+
+==Motivation==
+
+Existing Bitcoin signature schemes (ECDSA and BIP340 Schnorr) rely on the hardness of the Elliptic Curve Discrete Logarithm Problem (ECDLP). In the presence of a sufficiently powerful quantum computer running Shor's algorithm, these cryptography schemes will be broken, allowing attackers to reconstruct private keys from public keys and steal funds.
+
+Migrating to post-quantum cryptography (PQC) is critical for long-term security. However, post-quantum signature schemes (such as Dilithium or Falcon) have significant storage requirements. A raw Dilithium5 signature is approximately 4.6 KB, which is more than 70 times larger than an ECDSA signature (~70 bytes). Directly introducing such signatures to Bitcoin would severely degrade transaction throughput and blow up the blockchain size.
+
+BIP-QP-ZIP solves this storage bottleneck by:
+# Quantizing high-dimensional signature vectors onto discrete lattices to reduce precision footprint.
+# Using ZK-SNARKs to prove signature validity in-memory without exposing large raw signatures.
+# Retaining a deterministic residual error vector for perfect signature reconstruction at validation time.
+
+==Specification==
+
+===Witness Program Version 2===
+
+A new Segregated Witness program version is defined: '''Witness Version 2'''.
+* A Witness Version 2 scriptPubKey is defined as:
+  `OP_2 <32-byte-program>`
+* The 32-byte program data represents the '''Public Key Commitment''', which is the SHA256 hash of the fully reconstructed signature double vector.
+
+===Witness Stack Structure===
+
+When spending a Witness Version 2 output, the spending transaction's witness stack must contain exactly one item: the '''Serialized Compressed Signature'''. This serialized byte array must have a length of 3232 bytes and the following format:
+* `[0..32]`: Public key commitment (32 bytes)
+* `[32..160]`: ZK-SNARK validity proof (128 bytes)
+* `[160..1184]`: Quantized signature vector (256 elements, 32-bit little-endian signed integers; 1024 bytes)
+* `[1184..3232]`: Residual error vector (256 elements, 64-bit double-precision floats; 2048 bytes)
+
+===Verification Logic===
+
+Upon encountering a Witness Version 2 script, upgraded nodes perform the following validation steps:
+# Check that the witness stack contains exactly 1 item and its size is exactly 3232 bytes.
+# Compute the message hash as `SHA256(program)`.
+# Load the ZK proof, quantized signature, and residuals from the witness stack.
+# Verify the ZK proof using the message hash and quantized vector. If the proof is invalid, the script fails with `SCRIPT_ERR_EVAL_FALSE`.
+# Reconstruct the double-precision signature vector by scaling the quantized vector by `1024.0` and adding the residual errors.
+# Verify that `SHA256(reconstructed_signature)` matches the 32-byte public key commitment in the `scriptPubKey`. If they do not match, the script fails with `SCRIPT_ERR_WITNESS_PROGRAM_MISMATCH`.
+
+==Backward Compatibility==
+
+This BIP is implemented as a **soft-fork**.
+* '''Legacy Nodes (pre-soft-fork)''': Legacy nodes evaluate witness version 2 programs as `ANYONECANSPEND` (always valid), as defined in BIP141. They do not enforce the witness stack rules, preventing network splits.
+* '''Upgraded Nodes (post-soft-fork)''': Upgraded nodes enforce the full cryptographic validation logic, verifying that the post-quantum signature commitment and proof are fully correct.
+
+==Deployment==
+
+This soft-fork is deployed via the standard BIP9 Version Bits signaling mechanism.
+
+===BIP9 Parameters===
+
+* '''Name''': `qpzip`
+* '''Bit''': 5
+* '''Start Time''': 1782864000 (Epoch time corresponding to July 1, 2026)
+* '''Timeout''': 1814380800 (Epoch time corresponding to July 1, 2027)
+* '''Min Activation Height''': 0
+
+Once the signaling threshold is reached (90% of blocks in a 2016-block retarget period on mainnet), the `SCRIPT_VERIFY_QPZIP` verification flag is permanently activated for block validation.

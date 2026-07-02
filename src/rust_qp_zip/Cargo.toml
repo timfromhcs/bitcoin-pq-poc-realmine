@@ -1,0 +1,26 @@
+[package]
+name = "rust_qp_zip"
+version = "0.1.0"
+edition = "2021"
+authors = ["Bitcoin Core Developers"]
+description = "Quantum-Proof Zero-Knowledge Inflight Processing for Bitcoin Core"
+license = "MIT"
+
+[lib]
+name = "rust_qp_zip"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+# Cryptographic dependencies for post-quantum security
+# Using minimal dependencies for proof of concept
+rand = "0.8"
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
